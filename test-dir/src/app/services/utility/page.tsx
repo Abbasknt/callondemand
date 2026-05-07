@@ -91,7 +91,6 @@ export default function TopUpHub() {
   const [customerId, setCustomerId] = useState("")
   const [amount, setAmount] = useState("")
   const [productSearch, setProductSearch] = useState("")
-  const [dataFilter, setDataFilter] = useState("ALL")
   
   const [vendResult, setVendResult] = useState<any>(null)
   const [mounted, setMounted] = useState(false)
@@ -137,44 +136,11 @@ export default function TopUpHub() {
     async function syncBillers() {
       if (currentStep === 'config' || currentStep === 'category') {
         const result = await getBillersByCategory(CATEGORY_MAP[activeCategory]);
-        if (result && result.success) {
-           setBillers(result.response);
-           if (selectedNetwork && (activeCategory === 'DATA' || activeCategory === 'AIRTIME')) {
-              const targetBillers = result.response.filter((b: any) => 
-                b.name.toLowerCase().includes(selectedNetwork.toLowerCase()) || 
-                (selectedNetwork === '9mobile' && b.name.toLowerCase().includes('9mobile'))
-              );
-              
-              if (targetBillers.length > 0) {
-                setIsVerifying(true);
-                try {
-                  let allProducts: any[] = [];
-                  await Promise.all(targetBillers.map(async (targetBiller: any) => {
-                    const prodResult = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
-                    if (prodResult && prodResult.success) {
-                      const categoryProducts = prodResult.response.filter((p: any) => p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory]);
-                      allProducts = [...allProducts, ...categoryProducts];
-                    }
-                  }));
-                  setVariations(allProducts);
-                  if (activeCategory === 'AIRTIME' && allProducts.length > 0) {
-                    setSelectedProduct(allProducts[0]);
-                  } else {
-                    setSelectedProduct(null);
-                  }
-                } catch (e) {
-                  console.error(e);
-                  setVariations([]);
-                } finally {
-                  setIsVerifying(false);
-                }
-              }
-           }
-        }
+        if (result && result.success) setBillers(result.response);
       }
     }
     syncBillers();
-  }, [activeCategory, currentStep, selectedNetwork]);
+  }, [activeCategory, currentStep]);
 
   useEffect(() => {
     if (activeCategory !== 'AIRTIME' && activeCategory !== 'DATA') return;
@@ -211,31 +177,25 @@ export default function TopUpHub() {
   const syncVariationsForNetwork = async (networkId: string) => {
     setSelectedNetwork(networkId);
     setSelectedProduct(null);
-    setVariations([]);
     if (activeCategory === 'AIRTIME') setAmount("");
     
-    const targetBillers = billers.filter(b => 
+    const targetBiller = billers.find(b => 
       b.name.toLowerCase().includes(networkId.toLowerCase()) || 
       (networkId === '9mobile' && b.name.toLowerCase().includes('9mobile'))
     );
     
-    if ((activeCategory === 'DATA' || activeCategory === 'AIRTIME') && targetBillers.length > 0) {
+    if ((activeCategory === 'DATA' || activeCategory === 'AIRTIME') && targetBiller) {
       setIsVerifying(true);
       try {
-        let allProducts: any[] = [];
-        
-        await Promise.all(targetBillers.map(async (targetBiller) => {
-          const result = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
-          if (result && result.success) {
-            const categoryProducts = result.response.filter((p: any) => p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory]);
-            allProducts = [...allProducts, ...categoryProducts];
+        const result = await getBillerProducts(targetBiller.billerCode);
+        if (result && result.success) {
+          setVariations(result.response);
+          // Auto-select for Airtime since we don't show a list
+          if (activeCategory === 'AIRTIME' && result.response.length > 0) {
+            setSelectedProduct(result.response[0]);
           }
-        }));
-
-        setVariations(allProducts);
-        // Auto-select for Airtime since we don't show a list
-        if (activeCategory === 'AIRTIME' && allProducts.length > 0) {
-          setSelectedProduct(allProducts[0]);
+        } else {
+          toast({ title: "Sync Protocol Failed", variant: "destructive" });
         }
       } catch (e) {
         console.error(e);
@@ -247,34 +207,10 @@ export default function TopUpHub() {
   };
 
   const filteredVariations = useMemo(() => {
-    let result = variations;
-    if (productSearch) {
-      const q = productSearch.toLowerCase();
-      result = result.filter(v => v.name.toLowerCase().includes(q));
-    }
-    
-    if (activeCategory === 'DATA' && dataFilter !== 'ALL') {
-      const q = dataFilter.toLowerCase();
-      result = result.filter(v => {
-        const name = (v.name || '').toLowerCase();
-        const duration = (v.metadata?.durationUnit || '').toLowerCase();
-        
-        const textToMatch = `${name} ${duration}`;
-        
-        if (q === 'daily') {
-          return textToMatch.match(/\b(daily|1 day|2 days?|day|3 days?)\b/i) && !textToMatch.match(/\b(7 days?|30 days?|14 days?|week|weekly|month|monthly)\b/i);
-        }
-        if (q === 'weekly') {
-          return textToMatch.match(/\b(weekly|week|7 days?|14 days?)\b/i);
-        }
-        if (q === 'monthly') {
-          return textToMatch.match(/\b(monthly|months?|30 days?)\b/i);
-        }
-        return true;
-      });
-    }
-    return result;
-  }, [variations, productSearch, activeCategory, dataFilter]);
+    if (!productSearch) return variations;
+    const q = productSearch.toLowerCase();
+    return variations.filter(v => v.name.toLowerCase().includes(q));
+  }, [variations, productSearch]);
 
   const handleProceedToPayment = () => {
     if (!customerId || (activeCategory === 'AIRTIME' && !amount) || (activeCategory === 'DATA' && !selectedProduct)) return;
@@ -572,23 +508,9 @@ export default function TopUpHub() {
                         <Input placeholder="Search bundles (e.g. 1GB, Monthly)..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className="h-14 pl-12 rounded-2xl border-2 text-sm font-black uppercase tracking-tight" />
                       </div>
                       
-                      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mt-4">
-                        {['ALL', 'DAILY', 'WEEKLY', 'MONTHLY'].map(f => (
-                          <Button
-                            key={f}
-                            variant={dataFilter === f ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setDataFilter(f)}
-                            className={cn("h-8 rounded-full text-[9px] font-black uppercase min-w-[70px]", dataFilter === f ? "bg-primary text-white" : "text-muted-foreground")}
-                          >
-                            {f}
-                          </Button>
-                        ))}
-                      </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+                      <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
                         {isVerifying ? (
-                          <div className="col-span-full py-20 flex flex-col items-center justify-center gap-4 animate-pulse">
+                          <div className="py-20 flex flex-col items-center justify-center gap-4 animate-pulse">
                             <RefreshCw className="h-10 w-10 animate-spin text-primary opacity-20" />
                             <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Gateway Handshake...</p>
                           </div>
@@ -598,37 +520,39 @@ export default function TopUpHub() {
                               key={v.code || v.productCode || `v-${vIdx}`}
                               onClick={() => setSelectedProduct(v)}
                               className={cn(
-                                "w-full p-4 rounded-2xl border-2 transition-all flex flex-col items-start justify-between gap-3 group text-left",
+                                "w-full p-4 rounded-2xl border-2 transition-all flex items-center justify-between group",
                                 (selectedProduct?.code || selectedProduct?.productCode) === (v.code || v.productCode)
                                   ? "border-primary bg-primary/5 shadow-md"
                                   : "border-muted bg-white hover:border-primary/30"
                               )}
                             >
-                              <div className="w-full flex items-center justify-between">
+                              <div className="flex items-center gap-4">
                                 <div className={cn(
-                                  "h-8 w-8 rounded-xl flex items-center justify-center font-black text-xs",
+                                  "h-10 w-10 rounded-xl flex items-center justify-center font-black text-xs",
                                   (selectedProduct?.code || selectedProduct?.productCode) === (v.code || v.productCode) ? "bg-primary text-white" : "bg-muted text-muted-foreground"
                                 )}>
-                                  <Zap className="h-4 w-4" />
+                                  <Zap className="h-5 w-5" />
                                 </div>
+                                <div className="text-left">
+                                  <p className="text-[11px] font-black uppercase tracking-tight leading-tight">{v.name}</p>
+                                  {v.metadata && (
+                                    <p className="text-[9px] font-black text-muted-foreground uppercase opacity-60">
+                                      {v.metadata.volume ? `${v.metadata.volume}MB` : ''} {v.metadata.durationUnit || ''}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-black text-primary">₦{(v.price || v.amount)?.toLocaleString()}</p>
                                 <div className={cn(
-                                  "h-2 w-2 rounded-full",
+                                  "h-1.5 w-1.5 rounded-full ml-auto mt-1",
                                   (selectedProduct?.code || selectedProduct?.productCode) === (v.code || v.productCode) ? "bg-primary animate-ping" : "bg-transparent"
                                 )} />
-                              </div>
-                              <div className="w-full space-y-1">
-                                <p className="text-[11px] font-black uppercase tracking-tight leading-[1.2] line-clamp-2">{v.name}</p>
-                                {v.metadata && (
-                                  <p className="text-[9px] font-black text-muted-foreground uppercase opacity-60">
-                                    {v.metadata.volume ? `${v.metadata.volume}MB` : ''} {v.metadata.durationUnit || ''}
-                                  </p>
-                                )}
-                                <p className="text-sm font-black text-primary pt-1">₦{(v.price || v.amount)?.toLocaleString()}</p>
                               </div>
                             </button>
                           ))
                         ) : (
-                          <div className="col-span-full py-10 text-center space-y-2 grayscale opacity-40">
+                          <div className="py-10 text-center space-y-2 grayscale opacity-40">
                              <ZapOff className="h-10 w-10 mx-auto" />
                              <p className="text-[10px] font-black uppercase">No Bundles Found</p>
                           </div>

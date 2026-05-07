@@ -1,0 +1,88 @@
+{
+  "placeholderImages": [
+    {
+      "id": "food-banner",
+      "description": "Delicious local Nigerian cuisine",
+      "imageUrl": "https://picsum.photos/seed/food-hub/1200/400",
+      "imageHint": "nigerian food"
+    },
+    {
+      "id": "food-item-1",
+      "description": "Jollof Rice Special",
+      "imageUrl": "https://picsum.photos/seed/jollof/600/400",
+      "imageHint": "jollof rice"
+    },
+    {
+      "id": "food-item-2",
+      "description": "Pounded Yam & Egusi",
+      "imageUrl": "https://picsum.photos/seed/egusi/600/400",
+      "imageHint": "nigerian soup"
+    },
+    {
+      "id": "food-item-3",
+      "description": "Gizdodo Hub Box",
+      "imageUrl": "https://picsum.photos/seed/gizdodo/600/400",
+      "imageHint": "fried plantain"
+    },
+    {
+      "id": "laundry-banner",
+      "description": "Clean folded laundry service",
+      "imageUrl": "https://picsum.photos/seed/laundry-hub/1200/400",
+      "imageHint": "clean laundry"
+    },
+    {
+      "id": "laundry-service-1",
+      "description": "Professional garment care",
+      "imageUrl": "https://picsum.photos/seed/laundry-care/600/400",
+      "imageHint": "washing machine"
+    },
+    {
+      "id": "shop-banner",
+      "description": "Modern gadget marketplace",
+      "imageUrl": "https://picsum.photos/seed/shop-hub/1200/400",
+      "imageHint": "gadget shop"
+    },
+    {
+      "id": "shop-item-1",
+      "description": "COD Lifestyle Hoodie",
+      "imageUrl": "https://picsum.photos/seed/hoodie/600/400",
+      "imageHint": "premium hoodie"
+    },
+    {
+      "id": "shop-item-2",
+      "description": "Portable Power Bank",
+      "imageUrl": "https://picsum.photos/seed/powerbank/600/400",
+      "imageHint": "power bank"
+    },
+    {
+      "id": "investments-banner",
+      "description": "Financial growth and charts",
+      "imageUrl": "https://picsum.photos/seed/invest/1200/400",
+      "imageHint": "stock market"
+    },
+    {
+      "id": "crowdfunding-banner",
+      "description": "Community impact and projects",
+      "imageUrl": "https://picsum.photos/seed/impact/1200/500",
+      "imageHint": "community project"
+    },
+    {
+      "id": "shortlet-1",
+      "description": "The Cyan Penthouse",
+      "imageUrl": "https://picsum.photos/seed/luxury-stay/800/500",
+      "imageHint": "luxury penthouse"
+    },
+    {
+      "id": "shortlet-2",
+      "description": "Teal Garden Suite",
+      "imageUrl": "https://picsum.photos/seed/executive-stay/800/500",
+      "imageHint": "modern suite"
+    },
+    {
+      "id": "hero-lifestyle",
+      "description": "Modern lifestyle hero image",
+      "imageUrl": "https://picsum.photos/seed/lifestyle/1200/600",
+      "imageHint": "lifestyle apps"
+    }
+  ]
+}
