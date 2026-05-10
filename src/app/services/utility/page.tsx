@@ -152,7 +152,11 @@ export default function TopUpHub() {
                   await Promise.all(targetBillers.map(async (targetBiller: any) => {
                     const prodResult = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
                     if (prodResult && prodResult.success) {
-                      const categoryProducts = prodResult.response.filter((p: any) => p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory]);
+                      const categoryProducts = prodResult.response.filter((p: any) => {
+                        const isCatMatch = p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory];
+                        const isNetworkMatch = p.biller?.name?.toLowerCase().includes(targetBiller.name.toLowerCase()) || p.biller?.code?.toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || p.name?.toLowerCase().includes(targetBiller.name.toLowerCase());
+                        return isCatMatch && isNetworkMatch;
+                      });
                       allProducts = [...allProducts, ...categoryProducts];
                     }
                   }));
@@ -196,7 +200,15 @@ export default function TopUpHub() {
     try {
       const result = await getBillerProducts(biller.billerCode);
       if (result && result.success) {
-        setVariations(result.response);
+        const filtered = result.response.filter((p: any) => 
+          (p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory]) &&
+          (p.biller?.name?.toLowerCase().includes(biller.name.toLowerCase()) || p.biller?.code?.toLowerCase() === (biller.code || biller.billerCode)?.toLowerCase())
+        );
+        setVariations(filtered);
+        
+        if (activeCategory === 'ELECTRICITY' && filtered.length > 0) {
+          setSelectedProduct(filtered[0]);
+        }
       } else {
         toast({ title: "Sync Protocol Failed", variant: "destructive" });
       }
@@ -227,14 +239,18 @@ export default function TopUpHub() {
         await Promise.all(targetBillers.map(async (targetBiller) => {
           const result = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
           if (result && result.success) {
-            const categoryProducts = result.response.filter((p: any) => p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory]);
+            const categoryProducts = result.response.filter((p: any) => {
+              const isCatMatch = p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory];
+              const isNetworkMatch = p.biller?.name?.toLowerCase().includes(targetBiller.name.toLowerCase()) || p.biller?.code?.toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || p.name?.toLowerCase().includes(targetBiller.name.toLowerCase());
+              return isCatMatch && isNetworkMatch;
+            });
             allProducts = [...allProducts, ...categoryProducts];
           }
         }));
 
         setVariations(allProducts);
-        // Auto-select for Airtime since we don't show a list
-        if (activeCategory === 'AIRTIME' && allProducts.length > 0) {
+        // Auto-select for Airtime and Electricity since we don't show a list
+        if ((activeCategory === 'AIRTIME' || activeCategory === 'ELECTRICITY') && allProducts.length > 0) {
           setSelectedProduct(allProducts[0]);
         }
       } catch (e) {
@@ -277,13 +293,16 @@ export default function TopUpHub() {
   }, [variations, productSearch, activeCategory, dataFilter]);
 
   const handleProceedToPayment = () => {
-    if (!customerId || (activeCategory === 'AIRTIME' && !amount) || (activeCategory === 'DATA' && !selectedProduct)) return;
+    if (!customerId || 
+        ((activeCategory === 'AIRTIME' || activeCategory === 'ELECTRICITY') && !amount) || 
+        ((activeCategory === 'DATA' || activeCategory === 'TV') && !selectedProduct)
+    ) return;
     setCurrentStep('payment');
   };
 
   const handleFinalVend = async () => {
     if (!user || !wallet || !selectedNetwork) return;
-    const finalAmount = activeCategory === 'DATA' ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount);
+    const finalAmount = (activeCategory === 'DATA' || activeCategory === 'TV') ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount);
     
     if (wallet.balance < finalAmount) {
       toast({ title: "Insufficient Balance", variant: "destructive" });
@@ -544,10 +563,10 @@ export default function TopUpHub() {
               {selectedNetwork && (
                 <div className="space-y-4 animate-in fade-in">
                   <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest ml-1">
-                    {activeCategory === 'AIRTIME' ? '3. Recharge Value' : '3. Select Data Plan'}
+                    {activeCategory === 'AIRTIME' ? '3. Recharge Value' : activeCategory === 'ELECTRICITY' ? '3. Purchase Amount' : activeCategory === 'TV' ? '3. Select TV Bouquet' : '3. Select Data Plan'}
                   </label>
                   
-                  {activeCategory === 'AIRTIME' ? (
+                  {(activeCategory === 'AIRTIME' || activeCategory === 'ELECTRICITY') ? (
                     <div className="space-y-4">
                       <div className="relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-2xl text-muted-foreground opacity-30">₦</span>
@@ -642,7 +661,7 @@ export default function TopUpHub() {
             <CardFooter className="p-8 bg-muted/5 border-t">
               <Button 
                 onClick={handleProceedToPayment} 
-                disabled={!selectedNetwork || isVerifying || !customerId || (activeCategory === 'DATA' && !selectedProduct) || (activeCategory === 'AIRTIME' && !amount)}
+                disabled={!selectedNetwork || isVerifying || !customerId || ((activeCategory === 'DATA' || activeCategory === 'TV') && !selectedProduct) || ((activeCategory === 'AIRTIME' || activeCategory === 'ELECTRICITY') && !amount)}
                 className="w-full h-16 text-lg font-black rounded-2xl bg-primary shadow-xl uppercase gap-2"
               >
                 Verify Session <ChevronRight className="h-5 w-5" />
@@ -673,7 +692,7 @@ export default function TopUpHub() {
                 <div className="flex justify-between items-end">
                   <span className="text-[10px] font-black uppercase text-muted-foreground">Settlement Value</span>
                   <span className="text-4xl font-black text-primary tracking-tighter">
-                    ₦{(activeCategory === 'DATA' ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount)).toLocaleString()}
+                    ₦{((activeCategory === 'DATA' || activeCategory === 'TV') ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount)).toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -681,7 +700,7 @@ export default function TopUpHub() {
             <CardFooter className="p-10 bg-muted/5 border-t flex flex-col gap-4">
               <Button 
                 onClick={handleFinalVend} 
-                disabled={!wallet || wallet.balance < (activeCategory === 'DATA' ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount))}
+                disabled={!wallet || wallet.balance < ((activeCategory === 'DATA' || activeCategory === 'TV') ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount))}
                 className="w-full h-16 rounded-xl font-black text-xl bg-primary shadow-xl"
               >
                 Confirm & Pay Now
