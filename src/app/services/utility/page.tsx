@@ -154,7 +154,11 @@ export default function TopUpHub() {
                     if (prodResult && prodResult.success) {
                       const categoryProducts = prodResult.response.filter((p: any) => {
                         const isCatMatch = p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory];
-                        const isNetworkMatch = p.biller?.name?.toLowerCase().includes(targetBiller.name.toLowerCase()) || p.biller?.code?.toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || p.name?.toLowerCase().includes(targetBiller.name.toLowerCase());
+                        
+                        const productIdentifier = (p.name + (p.biller?.name || '')).toLowerCase();
+                        const isNetworkMatch = productIdentifier.includes(selectedNetwork.toLowerCase()) || 
+                                               (selectedNetwork === '9mobile' && productIdentifier.includes('9mobile'));
+                                               
                         return isCatMatch && isNetworkMatch;
                       });
                       allProducts = [...allProducts, ...categoryProducts];
@@ -241,7 +245,11 @@ export default function TopUpHub() {
           if (result && result.success) {
             const categoryProducts = result.response.filter((p: any) => {
               const isCatMatch = p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory];
-              const isNetworkMatch = p.biller?.name?.toLowerCase().includes(targetBiller.name.toLowerCase()) || p.biller?.code?.toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || p.name?.toLowerCase().includes(targetBiller.name.toLowerCase());
+              
+              const productIdentifier = (p.name + (p.biller?.name || '')).toLowerCase();
+              const isNetworkMatch = productIdentifier.includes(networkId.toLowerCase()) || 
+                                     (networkId === '9mobile' && productIdentifier.includes('9mobile'));
+                                     
               return isCatMatch && isNetworkMatch;
             });
             allProducts = [...allProducts, ...categoryProducts];
