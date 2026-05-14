@@ -392,8 +392,8 @@ export default function WalletPage() {
               <CardDescription className="text-[10px] font-black uppercase tracking-widest">Digital Payout Authorization</CardDescription>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
-                <Tabs triggerClassName="gap-1 mb-4" defaultValue="deposit">
-                  <TabsList className="bg-muted p-1 rounded-xl h-11 w-full">
+                <Tabs defaultValue="deposit">
+                  <TabsList className="bg-muted p-1 rounded-xl h-11 w-full gap-1 mb-4">
                     <TabsTrigger value="deposit" className="flex-1 font-black uppercase text-[10px] gap-2 rounded-lg">Deposit</TabsTrigger>
                     <TabsTrigger value="withdraw" className="flex-1 font-black uppercase text-[10px] gap-2 rounded-lg">Withdraw</TabsTrigger>
                   </TabsList>

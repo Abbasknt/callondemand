@@ -459,16 +459,13 @@ export default function TopUpHub() {
                   {topUpTxs.map((tx: any, idx: number) => {
                     const networkName = tx.description.match(/mtn|airtel|glo|9mobile/i)?.[0]?.toLowerCase();
                     const network = NETWORKS.find(n => n.id === networkName);
-                    const txId = tx.id || `recent-tx-${idx}`;
                     return (
                       <Card 
-                        key={txId} 
+                        key={tx.id || `tx-${idx}`} 
                         className="min-w-[140px] p-4 rounded-2xl border-none shadow-lg bg-card/50 flex flex-col items-center text-center gap-2 cursor-pointer hover:bg-card transition-colors"
                         onClick={() => {
-                          // Extract info from description if possible
                           const isData = tx.description.toLowerCase().includes('data');
                           setActiveCategory(isData ? 'DATA' : 'AIRTIME');
-                          // We don't have the phone number in description usually, but we could add it to metadata in the future
                           setCurrentStep('config');
                         }}
                       >
@@ -525,7 +522,7 @@ export default function TopUpHub() {
                 <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest ml-1 text-primary">2. Select Provider</label>
                 {(activeCategory === 'AIRTIME' || activeCategory === 'DATA') ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {NETWORKS.map(net => (
+                    {NETWORKS.map((net, idx) => (
                       <Button 
                         key={net.id}
                         variant="outline"
@@ -546,9 +543,9 @@ export default function TopUpHub() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    {billers.map(biller => (
+                    {billers.map((biller, idx) => (
                       <Button 
-                        key={biller.billerCode}
+                        key={biller.billerCode + '-' + idx}
                         variant="outline"
                         onClick={() => syncVariationsForBiller(biller)}
                         className={cn(
@@ -587,8 +584,8 @@ export default function TopUpHub() {
                         />
                       </div>
                       <div className="grid grid-cols-5 gap-2">
-                        {QUICK_AMOUNTS.map(amt => (
-                          <Button key={amt} variant="outline" size="sm" onClick={() => setAmount(amt.toString())} className="h-10 rounded-lg text-[9px] font-black">₦{amt}</Button>
+                        {QUICK_AMOUNTS.map((amt, idx) => (
+                          <Button key={amt + '-' + idx} variant="outline" size="sm" onClick={() => setAmount(amt.toString())} className="h-10 rounded-lg text-[9px] font-black">₦{amt}</Button>
                         ))}
                       </div>
                     </div>
@@ -600,9 +597,9 @@ export default function TopUpHub() {
                       </div>
                       
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mt-4">
-                        {['ALL', 'DAILY', 'WEEKLY', 'MONTHLY'].map(f => (
+                        {['ALL', 'DAILY', 'WEEKLY', 'MONTHLY'].map((f, idx) => (
                           <Button
-                            key={f}
+                            key={f + '-' + idx}
                             variant={dataFilter === f ? "default" : "outline"}
                             size="sm"
                             onClick={() => setDataFilter(f)}
