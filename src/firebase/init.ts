@@ -10,6 +10,13 @@ import { getVertexAI, VertexAI } from 'firebase/vertexai';
  * This is the source of truth for Firebase service instances.
  */
 export function initializeFirebase() {
+  /**
+   * Suppress noisy SDK logs. 
+   * The 'GRPC error has no .code' is an internal retry log that often
+   * occurs in proxied environments even when long polling is active.
+   */
+  setLogLevel('silent');
+
   const existingApps = getApps();
   const firebaseApp = existingApps.length ? getApp() : initializeApp(firebaseConfig);
   const dbId = firebaseConfig.firestoreDatabaseId === '(default)' ? undefined : firebaseConfig.firestoreDatabaseId;
@@ -29,16 +36,19 @@ export function initializeFirebase() {
     firestore = dbId 
       ? initializeFirestore(firebaseApp, settings, dbId)
       : initializeFirestore(firebaseApp, settings);
-    
-    // Suppress cancelation logs in dev environment
-    setLogLevel('error');
   } catch (e) {
     // Fallback if already initialized (persist settings)
     firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
   }
 
   const auth = getAuth(firebaseApp);
-  const vertexAI = getVertexAI(firebaseApp);
+  
+  let vertexAI: VertexAI | undefined;
+  try {
+    vertexAI = getVertexAI(firebaseApp);
+  } catch (e) {
+    console.warn("Vertex AI initialization failed:", e);
+  }
 
   // Diagnostic connection warm-up
   (async () => {
