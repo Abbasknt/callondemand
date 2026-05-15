@@ -88,7 +88,7 @@ export async function initMonnifyTransaction(params: {
 }) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
 
     const { data } = await axios.post(`${MONNIFY_BASE_URL}/v2/transactions/init-transaction`, 
       { 
@@ -112,7 +112,7 @@ export async function initMonnifyTransaction(params: {
 export async function getBillersByCategory(categoryCode: string) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v1/vas/bills-payment/billers?categoryCode=${categoryCode}`, { 
       headers: { Authorization: `Bearer ${auth.accessToken}` } 
     });
@@ -126,7 +126,7 @@ export async function getBillersByCategory(categoryCode: string) {
 export async function getBillerProducts(billerCode: string) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v1/vas/bills-payment/biller-products?billerCode=${billerCode}`, { 
       headers: { Authorization: `Bearer ${auth.accessToken}` } 
     });
@@ -155,7 +155,7 @@ export async function vendBillPayment(params: {
 }) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     
     const payload = {
       productCode: params.productCode,
@@ -203,7 +203,7 @@ export async function vendBillPayment(params: {
 export async function validateBankAccount(accountNumber: string, bankCode: string) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v1/disbursements/account/validate?accountNumber=${accountNumber}&bankCode=${bankCode}`, {
       headers: { Authorization: `Bearer ${auth.accessToken}` },
@@ -226,7 +226,7 @@ export async function validateBankAccount(accountNumber: string, bankCode: strin
 export async function getMerchantBalance() {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     
     const accountNumber = process.env.MONNIFY_WALLET_ACCOUNT || '8065933172';
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v2/disbursements/wallet-balance?accountNumber=${accountNumber}`, {
@@ -241,7 +241,7 @@ export async function getMerchantBalance() {
 export async function getBanks() {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v1/banks`, { headers: { Authorization: `Bearer ${auth.accessToken}` } });
     return { success: true, response: sanitize(extractArray(data.responseBody)) };
   } catch (e) { logAxiosError(e); return { success: false, error: 'Bank list unreachable' }; }
@@ -258,7 +258,7 @@ export async function getReservedAccount(params: {
 }) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
 
     const payload = {
       accountReference: params.accountReference,
@@ -288,7 +288,7 @@ export async function getReservedAccount(params: {
 export async function getMerchantTransactions() {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v2/transactions/search?size=50`, {
       headers: { Authorization: `Bearer ${auth.accessToken}` }
     });
@@ -305,7 +305,7 @@ export async function searchTransactions(params: {
 }) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     
     let query = `?page=${params.page || 0}&size=${params.size || 50}`;
     if (params.customerEmail) query += `&customerEmail=${encodeURIComponent(params.customerEmail)}`;
@@ -330,7 +330,7 @@ export async function searchTransactions(params: {
 export async function verifyTransaction(reference: string) {
   try {
     const auth = await getMonnifyToken();
-    if (!auth.success) return auth;
+    if (!auth.success) return { success: false, error: auth.error };
     
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v2/transactions/query?paymentReference=${encodeURIComponent(reference)}`, { 
       headers: { Authorization: `Bearer ${auth.accessToken}` },

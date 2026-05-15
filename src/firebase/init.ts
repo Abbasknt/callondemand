@@ -21,17 +21,20 @@ export function initializeFirebase() {
      * WebSockets/gRPC streams are restricted in proxied dev environments.
      * Force Long Polling to avoid 'Listen' stream cancellations.
      */
-    firestore = initializeFirestore(firebaseApp, {
+    const settings = {
       experimentalForceLongPolling: true,
       experimentalAutoDetectLongPolling: false,
-      useFetchStreams: false,
-    }, dbId);
+    };
+
+    firestore = dbId 
+      ? initializeFirestore(firebaseApp, settings, dbId)
+      : initializeFirestore(firebaseApp, settings);
     
     // Suppress cancelation logs in dev environment
     setLogLevel('error');
   } catch (e) {
     // Fallback if already initialized (persist settings)
-    firestore = getFirestore(firebaseApp, dbId);
+    firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
   }
 
   const auth = getAuth(firebaseApp);

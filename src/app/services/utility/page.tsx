@@ -127,75 +127,7 @@ export default function TopUpHub() {
     return recentTxs.filter(tx => tx.description?.toLowerCase().includes('top-up'));
   }, [recentTxs]);
 
-  useEffect(() => {
-    if (profile?.phoneNumber && !customerId) {
-      setCustomerId(profile.phoneNumber);
-    }
-  }, [profile]);
-
-  useEffect(() => {
-    async function syncBillers() {
-      if (currentStep === 'config' || currentStep === 'category') {
-        const result = await getBillersByCategory(CATEGORY_MAP[activeCategory]);
-        if (result && result.success) {
-           setBillers(result.response);
-           if (selectedNetwork && (activeCategory === 'DATA' || activeCategory === 'AIRTIME')) {
-              const targetBillers = result.response.filter((b: any) => 
-                b.name.toLowerCase().includes(selectedNetwork.toLowerCase()) || 
-                (selectedNetwork === '9mobile' && b.name.toLowerCase().includes('9mobile'))
-              );
-              
-              if (targetBillers.length > 0) {
-                setIsVerifying(true);
-                try {
-                  let allProducts: any[] = [];
-                  await Promise.all(targetBillers.map(async (targetBiller: any) => {
-                    const prodResult = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
-                    if (prodResult && prodResult.success) {
-                      const categoryProducts = prodResult.response.filter((p: any) => {
-                        const isCatMatch = p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory];
-                        
-                        const productIdentifier = (p.name + (p.biller?.name || '')).toLowerCase();
-                        const isNetworkMatch = productIdentifier.includes(selectedNetwork.toLowerCase()) || 
-                                               (selectedNetwork === '9mobile' && productIdentifier.includes('9mobile'));
-                                               
-                        return isCatMatch && isNetworkMatch;
-                      });
-                      allProducts = [...allProducts, ...categoryProducts];
-                    }
-                  }));
-                  setVariations(allProducts);
-                  if (activeCategory === 'AIRTIME' && allProducts.length > 0) {
-                    setSelectedProduct(allProducts[0]);
-                  } else {
-                    setSelectedProduct(null);
-                  }
-                } catch (e) {
-                  console.error(e);
-                  setVariations([]);
-                } finally {
-                  setIsVerifying(false);
-                }
-              }
-           }
-        }
-      }
-    }
-    syncBillers();
-  }, [activeCategory, currentStep, selectedNetwork]);
-
-  useEffect(() => {
-    if (activeCategory !== 'AIRTIME' && activeCategory !== 'DATA') return;
-    if (customerId.length >= 4) {
-      const prefix = customerId.slice(0, 4);
-      const detected = PREFIXES[prefix];
-      if (detected && detected !== selectedNetwork) {
-        syncVariationsForNetwork(detected);
-      }
-    }
-  }, [customerId, activeCategory]);
-
-  const syncVariationsForBiller = async (biller: any) => {
+  const syncVariationsForBiller = useCallback(async (biller: any) => {
     setSelectedNetwork(biller.name);
     setSelectedProduct(null);
     if (activeCategory === 'AIRTIME') setAmount("");
@@ -222,18 +154,22 @@ export default function TopUpHub() {
     } finally {
       setIsVerifying(false);
     }
-  };
+  }, [activeCategory, toast]);
 
-  const syncVariationsForNetwork = async (networkId: string) => {
+  const syncVariationsForNetwork = useCallback(async (networkId: string) => {
     setSelectedNetwork(networkId);
     setSelectedProduct(null);
     setVariations([]);
     if (activeCategory === 'AIRTIME') setAmount("");
     
-    const targetBillers = billers.filter(b => 
-      b.name.toLowerCase().includes(networkId.toLowerCase()) || 
-      (networkId === '9mobile' && b.name.toLowerCase().includes('9mobile'))
-    );
+    const targetBillers = billers.filter(b => {
+      const name = b.name.toLowerCase();
+      const net = networkId.toLowerCase();
+      if (name.includes(net)) return true;
+      if (net === '9mobile' && (name.includes('9mobile') || name.includes('etisalat') || name.includes('emts'))) return true;
+      if (net === 'airtel' && name.includes('airtel')) return true;
+      return false;
+    });
     
     if ((activeCategory === 'DATA' || activeCategory === 'AIRTIME') && targetBillers.length > 0) {
       setIsVerifying(true);
@@ -244,12 +180,16 @@ export default function TopUpHub() {
           const result = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
           if (result && result.success) {
             const categoryProducts = result.response.filter((p: any) => {
-              const isCatMatch = p.category?.code === CATEGORY_MAP[activeCategory] || p.category?.name === CATEGORY_MAP[activeCategory];
+              const pCatCode = p.category?.code || '';
+              const pCatName = p.category?.name || '';
+              const targetCat = CATEGORY_MAP[activeCategory];
               
-              const productIdentifier = (p.name + (p.biller?.name || '')).toLowerCase();
-              const isNetworkMatch = productIdentifier.includes(networkId.toLowerCase()) || 
-                                     (networkId === '9mobile' && productIdentifier.includes('9mobile'));
-                                     
+              const isCatMatch = pCatCode === targetCat || pCatName === targetCat || 
+                               (activeCategory === 'DATA' && (pCatCode === 'DATA' || pCatName === 'DATA'));
+              
+              const isNetworkMatch = p.biller?.name?.toLowerCase().includes(targetBiller.name.toLowerCase()) || 
+                                   p.biller?.code?.toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || 
+                                   p.name?.toLowerCase().includes(targetBiller.name.toLowerCase());
               return isCatMatch && isNetworkMatch;
             });
             allProducts = [...allProducts, ...categoryProducts];
@@ -257,8 +197,8 @@ export default function TopUpHub() {
         }));
 
         setVariations(allProducts);
-        // Auto-select for Airtime and Electricity since we don't show a list
-        if ((activeCategory === 'AIRTIME' || activeCategory === 'ELECTRICITY') && allProducts.length > 0) {
+        // Auto-select for Airtime since we don't show a list for it in network mode
+        if (activeCategory === 'AIRTIME' && allProducts.length > 0) {
           setSelectedProduct(allProducts[0]);
         }
       } catch (e) {
@@ -268,7 +208,97 @@ export default function TopUpHub() {
         setIsVerifying(false);
       }
     }
-  };
+  }, [activeCategory, billers, toast]);
+
+  useEffect(() => {
+    if (profile?.phoneNumber && !customerId) {
+      setCustomerId(profile.phoneNumber);
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    async function syncBillers() {
+      if (currentStep === 'config' || currentStep === 'category') {
+        const categoriesToFetch = activeCategory === 'DATA' ? ['DATA_BUNDLE', 'DATA'] : [CATEGORY_MAP[activeCategory]];
+        let allBillers: any[] = [];
+        
+        try {
+          await Promise.all(categoriesToFetch.map(async (cat) => {
+            const result = await getBillersByCategory(cat);
+            if (result && result.success) {
+              allBillers = [...allBillers, ...result.response];
+            }
+          }));
+          
+          // De-duplicate by code
+          const uniqueBillers = Array.from(new Map(allBillers.map(b => [b.billerCode || b.code, b])).values());
+          setBillers(uniqueBillers);
+
+          if (selectedNetwork && (activeCategory === 'DATA' || activeCategory === 'AIRTIME')) {
+              const targetBillers = uniqueBillers.filter((b: any) => {
+                const name = b.name.toLowerCase();
+                const net = selectedNetwork.toLowerCase();
+                if (name.includes(net)) return true;
+                if (net === '9mobile' && (name.includes('9mobile') || name.includes('etisalat') || name.includes('emts'))) return true;
+                if (net === 'airtel' && name.includes('airtel')) return true;
+                return false;
+              });
+              
+              if (targetBillers.length > 0) {
+                setIsVerifying(true);
+                try {
+                  let allProducts: any[] = [];
+                  await Promise.all(targetBillers.map(async (targetBiller: any) => {
+                    const prodResult = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
+                    if (prodResult && prodResult.success) {
+                      const categoryProducts = prodResult.response.filter((p: any) => {
+                        const pCatCode = p.category?.code || '';
+                        const pCatName = p.category?.name || '';
+                        const targetCat = CATEGORY_MAP[activeCategory];
+                        
+                        const isCatMatch = pCatCode === targetCat || pCatName === targetCat || 
+                                         (activeCategory === 'DATA' && (pCatCode === 'DATA' || pCatName === 'DATA'));
+                        
+                        const isNetworkMatch = p.biller?.name?.toLowerCase().includes(targetBiller.name.toLowerCase()) || 
+                                             p.biller?.code?.toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || 
+                                             p.name?.toLowerCase().includes(targetBiller.name.toLowerCase());
+                        return isCatMatch && isNetworkMatch;
+                      });
+                      allProducts = [...allProducts, ...categoryProducts];
+                    }
+                  }));
+                  setVariations(allProducts);
+                  if (activeCategory === 'AIRTIME' && allProducts.length > 0) {
+                    setSelectedProduct(allProducts[0]);
+                  } else {
+                    setSelectedProduct(null);
+                  }
+                } catch (e) {
+                  console.error(e);
+                  setVariations([]);
+                } finally {
+                  setIsVerifying(false);
+                }
+              }
+           }
+        } catch (e) {
+          console.error("Biller Sync Error:", e);
+        }
+      }
+    }
+    syncBillers();
+  }, [activeCategory, currentStep, selectedNetwork]);
+
+  useEffect(() => {
+    if (activeCategory !== 'AIRTIME' && activeCategory !== 'DATA') return;
+    if (customerId.length >= 4) {
+      const prefix = customerId.slice(0, 4);
+      const detected = PREFIXES[prefix];
+      if (detected && detected !== selectedNetwork) {
+        syncVariationsForNetwork(detected);
+      }
+    }
+  }, [customerId, activeCategory, selectedNetwork, syncVariationsForNetwork]);
 
   const filteredVariations = useMemo(() => {
     let result = variations;
@@ -319,10 +349,14 @@ export default function TopUpHub() {
 
     setCurrentStep('processing');
     
-    const targetBiller = billers.find(b => 
-      b.name.toLowerCase().includes(selectedNetwork.toLowerCase()) ||
-      (selectedNetwork === '9mobile' && b.name.toLowerCase().includes('9mobile'))
-    );
+    const targetBiller = billers.find(b => {
+      const name = b.name.toLowerCase();
+      const net = selectedNetwork.toLowerCase();
+      if (name.includes(net)) return true;
+      if (net === '9mobile' && (name.includes('9mobile') || name.includes('etisalat') || name.includes('emts'))) return true;
+      if (net === 'airtel' && name.includes('airtel')) return true;
+      return false;
+    });
 
     if (!targetBiller) {
       toast({ title: "Operator Mapping Error", variant: "destructive" });
@@ -350,7 +384,7 @@ export default function TopUpHub() {
       addDocumentNonBlocking(collection(walletRef!, 'transactions'), {
         type: 'Payment', 
         amount: finalAmount, 
-        description: `Top-up: ${selectedNetwork.toUpperCase()} ${activeCategory}`, 
+        description: `Top-up: ${selectedNetwork.toUpperCase()} ${activeCategory} to ${customerId}`, 
         transactionDate: new Date().toISOString(), 
         status: 'Completed', 
         reference: finalRef,
@@ -459,13 +493,16 @@ export default function TopUpHub() {
                   {topUpTxs.map((tx: any, idx: number) => {
                     const networkName = tx.description.match(/mtn|airtel|glo|9mobile/i)?.[0]?.toLowerCase();
                     const network = NETWORKS.find(n => n.id === networkName);
+                    const txId = tx.id || `recent-tx-${idx}`;
                     return (
                       <Card 
-                        key={tx.id || `tx-${idx}`} 
+                        key={txId} 
                         className="min-w-[140px] p-4 rounded-2xl border-none shadow-lg bg-card/50 flex flex-col items-center text-center gap-2 cursor-pointer hover:bg-card transition-colors"
                         onClick={() => {
                           const isData = tx.description.toLowerCase().includes('data');
                           setActiveCategory(isData ? 'DATA' : 'AIRTIME');
+                          const phoneMatch = tx.description.match(/\b\d{10,14}\b/);
+                          if (phoneMatch) setCustomerId(phoneMatch[0]);
                           setCurrentStep('config');
                         }}
                       >
@@ -522,7 +559,7 @@ export default function TopUpHub() {
                 <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest ml-1 text-primary">2. Select Provider</label>
                 {(activeCategory === 'AIRTIME' || activeCategory === 'DATA') ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {NETWORKS.map((net, idx) => (
+                    {NETWORKS.map(net => (
                       <Button 
                         key={net.id}
                         variant="outline"
@@ -543,9 +580,9 @@ export default function TopUpHub() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    {billers.map((biller, idx) => (
+                    {billers.map(biller => (
                       <Button 
-                        key={biller.billerCode + '-' + idx}
+                        key={biller.billerCode}
                         variant="outline"
                         onClick={() => syncVariationsForBiller(biller)}
                         className={cn(
@@ -584,8 +621,8 @@ export default function TopUpHub() {
                         />
                       </div>
                       <div className="grid grid-cols-5 gap-2">
-                        {QUICK_AMOUNTS.map((amt, idx) => (
-                          <Button key={amt + '-' + idx} variant="outline" size="sm" onClick={() => setAmount(amt.toString())} className="h-10 rounded-lg text-[9px] font-black">₦{amt}</Button>
+                        {QUICK_AMOUNTS.map(amt => (
+                          <Button key={amt} variant="outline" size="sm" onClick={() => setAmount(amt.toString())} className="h-10 rounded-lg text-[9px] font-black">₦{amt}</Button>
                         ))}
                       </div>
                     </div>
@@ -597,9 +634,9 @@ export default function TopUpHub() {
                       </div>
                       
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mt-4">
-                        {['ALL', 'DAILY', 'WEEKLY', 'MONTHLY'].map((f, idx) => (
+                        {['ALL', 'DAILY', 'WEEKLY', 'MONTHLY'].map(f => (
                           <Button
-                            key={f + '-' + idx}
+                            key={f}
                             variant={dataFilter === f ? "default" : "outline"}
                             size="sm"
                             onClick={() => setDataFilter(f)}

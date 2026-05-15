@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,6 +43,7 @@ import { BrandLogo } from "@/components/brand-logo"
  */
 
 export default function WalletPage() {
+  const router = useRouter()
   const { toast } = useToast()
   const { user, isUserLoading } = useUser()
   const firestore = useFirestore()
@@ -73,7 +75,7 @@ export default function WalletPage() {
       setIsReserving(false);
     }
     syncReservedAccount();
-  }, [selectedMethod, user]);
+  }, [selectedMethod, user, reservedAccount]);
 
   const handleSyncWallet = useCallback(async (silent = false) => {
     if (!user || !firestore || isSyncing) return;
@@ -393,7 +395,7 @@ export default function WalletPage() {
             </CardHeader>
             <CardContent className="p-6 space-y-6">
                 <Tabs defaultValue="deposit">
-                  <TabsList className="bg-muted p-1 rounded-xl h-11 w-full gap-1 mb-4">
+                  <TabsList className="bg-muted p-1 rounded-xl h-11 w-full">
                     <TabsTrigger value="deposit" className="flex-1 font-black uppercase text-[10px] gap-2 rounded-lg">Deposit</TabsTrigger>
                     <TabsTrigger value="withdraw" className="flex-1 font-black uppercase text-[10px] gap-2 rounded-lg">Withdraw</TabsTrigger>
                   </TabsList>
