@@ -1,0 +1,39 @@
+import { db, auth } from '@/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+/**
+ * System Audit Log Actions
+ */
+export enum AuditAction {
+  USER_PROMOTION = 'USER_PROMOTION',
+  USER_DEMOTION = 'USER_DEMOTION',
+  USER_RESTRICTION = 'USER_RESTRICTION',
+  TASK_MODIFICATION = 'TASK_MODIFICATION',
+  TASK_DELETION = 'TASK_DELETION',
+  TASK_BULK_UPDATE = 'TASK_BULK_UPDATE',
+  UNIT_MODIFICATION = 'UNIT_MODIFICATION',
+  PLAN_MODIFICATION = 'PLAN_MODIFICATION',
+  CONFIG_UPDATE = 'CONFIG_UPDATE',
+  ACCESS_DENIED = 'ACCESS_DENIED',
+}
+
+/**
+ * Logs an administrative action to the system_logs collection.
+ * This is used for compliance and security auditing.
+ */
+export async function logAuditAction(action: AuditAction, details: Record<string, any>) {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  try {
+    await addDoc(collection(db, 'system_logs'), {
+      action,
+      performerId: user.uid,
+      performerEmail: user.email,
+      timestamp: serverTimestamp(),
+      details,
+    });
+  } catch (error) {
+    console.error('Audit Logging Failed:', error);
+  }
+}

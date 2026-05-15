@@ -1,20 +1,40 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Call on Demand Platform (COD)
 
-# Run and deploy your AI Studio app
+One platform for your wallet, food, laundry, logistics, and investments. Seamlessly integrated for the modern Nigerian lifestyle.
 
-This contains everything you need to run your app locally.
+## 🚀 Production Deployment
+The platform is synchronized with the following production endpoints:
 
-View your app in AI Studio: https://ai.studio/apps/a9970b43-ab5c-4921-b5bb-2713c617e30a
+- **Primary Domain**: [https://callondemandbiz.com](https://callondemandbiz.com)
+- **Hosting URL**: [https://call-on-demand-79718192-79822.us-central1.hosted.app]
 
-## Run Locally
+## 🛠 CLI Setup & Authorization (URGENT)
+To resolve **Cloud Build Code 9** and **Secret Misconfiguration** errors, you must authorize your secrets via the Firebase CLI:
 
-**Prerequisites:**  Node.js
+### 1. Update Firebase Tools
+```bash
+npm install -g firebase-tools@latest
+firebase logout --all
+firebase login --reauth
+```
 
+### 2. Grant Secret Access
+Run these commands to authorize the production backend:
+```bash
+# Authorize Monnify Gateway Secret
+firebase apphosting:secrets:grantaccess MONNIFY_SECRET_KEY --project call-on-demand-79718192-79822
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+# Authorize Google GenAI Secret
+firebase apphosting:secrets:grantaccess GOOGLE_GENAI_API_KEY --project call-on-demand-79718192-79822
+
+# Authorize Pinned API Key
+firebase apphosting:secrets:grantaccess myApiKeySecret --project call-on-demand-79718192-79822
+```
+
+### 3. Horizontal Scaling (YAML)
+Modify `apphosting.yaml` to adjust the infrastructure footprint:
+- `maxInstances`: Set to `10` or more for high traffic.
+- `memory`: Set to `2Gi` for heavy GenAI/Image processing.
+
+---
+© 2026 Call on Demand.com. A Future-Proof Lifestyle Partner.

@@ -1,0 +1,9 @@
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /agent/
+Disallow: /operator/
+Disallow: /settings/
+
+Sitemap: https://callondemandbiz.com/sitemap.xml

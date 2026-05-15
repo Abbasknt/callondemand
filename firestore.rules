@@ -1,0 +1,173 @@
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Global Safety Net ---
+    match /{document=**} { allow read, write: if false; }
+
+    // --- Primitive Protocols ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // System Root: Hardcoded foundational oversight (Immune to database-level demotion)
+    function isSystemRoot() {
+      return isSignedIn() && (
+        request.auth.token.email.lower() in [
+          'altamambcs@callondemandbiz.com',
+          'tatatradeandinnovation@gmail.com', 
+          'altamam02@gmail.com'
+        ] ||
+        request.auth.uid in [
+          'h9GHzdXjjtcVrDLRgFteGDWRY433', 
+          'HWHgYBsQEIafGj731chLSE200Y13'
+        ]
+      );
+    }
+
+    // Admins: Delegated authority from System Root
+    function isAdmin() {
+      return isSystemRoot() || exists(/databases/$(database)/documents/super_admins/$(request.auth.uid));
+    }
+
+    // --- Entity Validation Blueprints (Anti-Update-Gap) ---
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['id', 'firstName', 'lastName', 'email', 'role']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.firstName is string && data.firstName.size() <= 64 &&
+             data.lastName is string && data.lastName.size() <= 64 &&
+             data.email is string && data.email.size() <= 128 &&
+             data.role in ['Customer', 'Agent', 'Operator', 'Admin'];
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['action', 'performerId', 'timestamp', 'details']) &&
+             data.action is string && data.timestamp is timestamp &&
+             data.performerId == request.auth.uid;
+    }
+
+    function isValidDeliveryTask(data) {
+      return data.keys().hasAll(['status', 'serviceType', 'origin', 'destination']) &&
+             data.status in ['Pending Approval', 'Processing', 'In Transit', 'Out for Delivery', 'Delivered', 'Cancelled'] &&
+             data.serviceType is string && data.serviceType.size() <= 50 &&
+             data.origin is string && data.origin.size() <= 200 &&
+             data.destination is string && data.destination.size() <= 200 &&
+             (!data.keys().contains('priority') || data.priority in ['High', 'Medium', 'Low']);
+    }
+
+    function isValidOperationalUnit(data) {
+      return data.keys().hasAll(['name', 'status']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.status in ['Active', 'Inactive'];
+    }
+
+    // --- Service Catalogs: Locked for Admin, Discovered by Authenticated Partners ---
+    
+    match /menuItems/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow write: if isAdmin(); 
+    }
+    match /productListings/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow write: if isAdmin(); 
+    }
+    match /laundryServiceOptions/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow write: if isAdmin(); 
+    }
+    match /shortletListings/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow write: if isAdmin(); 
+    }
+    match /logisticsServiceOptions/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow write: if isAdmin(); 
+    }
+    match /campaigns/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow write: if isAdmin(); 
+    }
+    match /investmentPlans/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow write: if isAdmin(); 
+    }
+    match /operational_units/{id} { 
+      allow read, list: if isSignedIn(); 
+      allow create, update: if isAdmin() && isValidOperationalUnit(incoming());
+      allow delete: if isAdmin();
+    }
+    match /application_settings/{id} { 
+      allow read: if true; 
+      allow write: if isAdmin(); 
+    }
+
+    // --- Logistics & Fulfillment Manifest ---
+
+    match /deliveryTasks/{taskId} {
+      // Visibility: Admin/Operator see all. Customers see their own (validated by userId field).
+      allow read, list: if isSignedIn() && (isAdmin() || existing().customerUserId == request.auth.uid || existing().operatorId == request.auth.uid);
+      
+      allow create: if isSignedIn() && isValidDeliveryTask(incoming()) && (
+        isAdmin() || (incoming().customerUserId == request.auth.uid && !incoming().keys().contains('priority'))
+      );
+
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (existing().customerUserId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['orderSummary', 'origin', 'destination'])) ||
+        (existing().operatorId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+      ) && isValidDeliveryTask(incoming());
+
+      allow delete: if isAdmin();
+    }
+
+    // --- User Registry & Personal Subcollections ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUserProfile(incoming());
+      
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['firstName', 'lastName', 'phoneNumber', 'bankName', 'accountNumber', 'accountName'])) ||
+        // Only System Root can promote someone to Admin
+        (isAdmin() && incoming().role != 'Admin') ||
+        (isSystemRoot() && incoming().role == 'Admin')
+      ) && isValidUserProfile(incoming());
+
+      match /{allSubcollections=**} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+    }
+
+    // --- Administrative Registry ---
+
+    match /super_admins/{userId} {
+      allow read: if isAdmin();
+      // Only System Root can manage the administrative registry
+      allow write: if isSystemRoot();
+    }
+
+    match /system_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && isValidAuditLog(incoming());
+      allow update, delete: if false; // Logs are immutable
+    }
+
+    match /invitations/{email} {
+      // Users can read their own invitation by email during signup
+      allow get: if isSignedIn() && request.auth.token.email.lower() == email.lower();
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}
