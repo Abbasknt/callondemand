@@ -22,7 +22,9 @@ import {
   BrainCircuit,
   Stars,
   RefreshCw,
-  BellRing
+  BellRing,
+  Globe,
+  TrendingUp
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
@@ -67,7 +69,7 @@ export default function DashboardPage() {
     return doc(firestore, 'users', user.uid);
   }, [firestore, user?.uid]);
   const { data: profile, isLoading: isProfileLoading } = useDoc(profileRef);
-  const currentRegion = profile?.region || 'Africa';
+  const currentRegion = 'Africa';
 
   const isProfileMissing = !isProfileLoading && !profile && !!user;
 
@@ -130,7 +132,7 @@ export default function DashboardPage() {
         if (!apiKey) throw new Error("API Key missing");
         
         const ai = new GoogleGenAI({ apiKey });
-        const prompt = `Give a very short (max 10 words) helpful lifestyle tip for a user in ${currentRegion === 'Africa' ? 'Nigeria (Africa Hub)' : 'USA (Global Hub)'} named ${user.displayName?.split(' ')[0] || 'Partner'}. Focus on speed or convenience.`;
+        const prompt = `Give a very short (max 10 words) helpful lifestyle tip for a user in Nigeria (Africa Hub) named ${user.displayName?.split(' ')[0] || 'Partner'}. Focus on speed or convenience.`;
         
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
@@ -182,18 +184,6 @@ export default function DashboardPage() {
     toast({ title: "Authorized", description: "Status acknowledged." });
   };
 
-  const toggleRegion = async () => {
-    if (!profileRef) return;
-    const nextRegion = currentRegion === 'Africa' ? 'USA' : 'Africa';
-    const { updateDoc } = await import('firebase/firestore');
-    await updateDoc(profileRef, { region: nextRegion });
-    toast({ 
-      title: `Switched to ${nextRegion} Hub`, 
-      description: `Platform nodes re-aligned for ${nextRegion === 'Africa' ? 'Naira (₦)' : 'Dollar ($)'} operations.` 
-    });
-    handleRefresh();
-  };
-
   if (isUserLoading || !mounted) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
@@ -232,22 +222,9 @@ export default function DashboardPage() {
             <h2 className="text-xl md:text-2xl font-black tracking-tighter">
               Hi, {user?.displayName?.split(' ')[0] || 'Partner'}
             </h2>
-            <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest opacity-60">Production Hub Live</p>
+            <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest opacity-60">Nigeria Hub Live</p>
           </div>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={toggleRegion}
-              className="h-8 px-3 rounded-xl border-2 flex items-center gap-2 text-[8px] font-black uppercase tracking-widest bg-white shadow-sm hover:border-primary transition-all"
-            >
-              <span className={cn(currentRegion === 'Africa' ? "text-primary" : "text-muted-foreground")}>AFR</span>
-              <div className="w-4 h-2 bg-muted rounded-full relative">
-                <div className={cn(
-                  "absolute top-0 w-2 h-2 rounded-full bg-primary transition-all",
-                  currentRegion === 'USA' ? "left-2" : "left-0"
-                )} />
-              </div>
-              <span className={cn(currentRegion === 'USA' ? "text-primary" : "text-muted-foreground")}>USA</span>
-            </button>
             <button 
               onClick={handleRefresh} 
               className="h-8 w-8 rounded-xl border-2 flex items-center justify-center text-muted-foreground hover:text-primary transition-all bg-white shadow-sm"
@@ -331,7 +308,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="px-6">
               <div className="text-2xl md:text-3xl font-black tracking-tighter mb-4">
-                {isWalletLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : showBalance ? `${currentRegion === 'Africa' ? '₦' : '$'} ${(wallet?.balance || 0).toLocaleString()}` : `${currentRegion === 'Africa' ? '₦' : '$'} ••••••••`}
+                {isWalletLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : showBalance ? `₦ ${(wallet?.balance || 0).toLocaleString()}` : `₦ ••••••••`}
               </div>
               <div className="flex gap-2">
                 <Button asChild size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 border-none text-white font-black rounded-lg h-8 px-4 text-[8px] uppercase tracking-widest">
@@ -392,6 +369,41 @@ export default function DashboardPage() {
               </Link>
             ))}
           </div>
+        </div>
+
+        {/* Nigeria Platform Insights - Scaling Up */}
+        <div className="space-y-4 pt-6">
+           <div className="flex items-center justify-between px-1">
+             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary flex items-center gap-2">
+               <Globe className="h-4 w-4" /> Nigeria Platform Status
+             </h3>
+             <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest border-green-500/20 text-green-600 bg-green-500/5">
+                All Nodes Live
+             </Badge>
+           </div>
+           
+           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Total Volume', value: '₦8.4B', trend: '+12%', color: 'text-primary' },
+                { label: 'Active Agents', value: '1,240', trend: '+45', color: 'text-accent' },
+                { label: 'Logistics Hubs', value: '18', trend: 'Nigeria', color: 'text-primary' },
+                { label: 'System Uptime', value: '99.9%', trend: 'Stable', color: 'text-green-600' }
+              ].map((stat, i) => (
+                <div key={i} className="bg-white border-2 border-muted hover:border-primary/20 transition-all rounded-2xl p-4 shadow-sm group">
+                  <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mb-1">{stat.label}</p>
+                  <div className={cn("text-lg font-black tracking-tighter truncate", stat.color)}>{stat.value}</div>
+                  <div className="text-[7px] font-bold opacity-50 mt-1 flex items-center gap-1">
+                    <TrendingUp className="h-2 w-2" /> {stat.trend}
+                  </div>
+                </div>
+              ))}
+           </div>
+
+           <Button asChild variant="outline" className="w-full h-12 rounded-2xl border-2 border-dashed border-primary/20 hover:border-primary/40 text-[9px] font-black uppercase tracking-widest text-primary gap-2 bg-primary/5">
+             <Link href="/services">
+               Explore COD Pro Features <Stars className="h-4 w-4" />
+             </Link>
+           </Button>
         </div>
 
         {bannerAd && (

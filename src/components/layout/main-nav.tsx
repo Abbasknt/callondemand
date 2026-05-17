@@ -25,7 +25,8 @@ import {
   ChevronRight,
   ChevronLeft,
   Crown,
-  ClipboardList
+  ClipboardList,
+  Globe
 } from "lucide-react"
 import LinkNext from "next/link"
 import { BrandLogo } from "@/components/brand-logo"
@@ -153,12 +154,24 @@ export function MainNav() {
   return (
     <>
       {/* Desktop Sidebar */}
-      <nav className="flex flex-col gap-2 p-4 w-64 bg-card border-r h-screen sticky top-0 hidden md:flex shadow-sm">
+      <nav className="flex flex-col gap-2 p-4 w-64 bg-card border-r h-screen sticky top-0 hidden md:flex shadow-sm overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-[0.02] pointer-events-none">
+          <Globe className="h-64 w-64" />
+        </div>
         <div className="mb-10 px-2 pt-2">
           <LinkNext href="/dashboard">
             <BrandLogo />
           </LinkNext>
         </div>
+
+        <div className="px-4 py-3 mb-6 bg-primary/5 rounded-[1.5rem] border border-primary/10">
+           <div className="flex items-center justify-between mb-1">
+             <span className="text-[8px] font-black uppercase tracking-widest text-primary">Nigeria Node Sync</span>
+             <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
+           </div>
+           <p className="text-[10px] font-bold opacity-60">HUB-NGR-01 | LIVE</p>
+        </div>
+
         <div className="flex-1 overflow-y-auto space-y-1 no-scrollbar pb-10">
           {allItems.map((item, idx) => (
             <div key={item.name}>

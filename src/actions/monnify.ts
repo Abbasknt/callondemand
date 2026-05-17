@@ -4,12 +4,18 @@
 import axios from 'axios';
 
 // Standardized production keys from environment
-const MONNIFY_API_KEY = process.env.NEXT_PUBLIC_MONNIFY_API_KEY || 'MK_PROD_VRXL0T3UDD';
+const MONNIFY_API_KEY = process.env.NEXT_PUBLIC_MONNIFY_API_KEY;
 const MONNIFY_SECRET_KEY = process.env.MONNIFY_SECRET_KEY; // Managed via Firebase Secrets
-const MONNIFY_CONTRACT_CODE = process.env.NEXT_PUBLIC_MONNIFY_CONTRACT_CODE || '730430763017';
-const MONNIFY_BASE_URL = MONNIFY_API_KEY.startsWith('MK_PROD_') 
+const MONNIFY_CONTRACT_CODE = process.env.NEXT_PUBLIC_MONNIFY_CONTRACT_CODE;
+const MONNIFY_BASE_URL = MONNIFY_API_KEY?.startsWith('MK_PROD_') 
   ? 'https://api.monnify.com/api' 
   : 'https://sandbox.monnify.com/api';
+
+function checkMonnifyConfig() {
+  if (!MONNIFY_API_KEY || !MONNIFY_SECRET_KEY || !MONNIFY_CONTRACT_CODE) {
+    throw new Error('Monnify configuration is incomplete. Ensure NEXT_PUBLIC_MONNIFY_API_KEY, MONNIFY_SECRET_KEY, and NEXT_PUBLIC_MONNIFY_CONTRACT_CODE are set.');
+  }
+}
 
 /**
  * Enhanced Axios error logger.
@@ -53,10 +59,7 @@ function extractArray(responseBody: any): any[] {
  */
 export async function getMonnifyToken() {
   try {
-    if (!MONNIFY_API_KEY || !MONNIFY_SECRET_KEY) {
-      console.warn('Monnify configuration is incomplete. Check NEXT_PUBLIC_MONNIFY_API_KEY and MONNIFY_SECRET_KEY environment variables.');
-      return { success: false, error: 'Gateway Configuration Error' };
-    }
+    checkMonnifyConfig();
     const authString = Buffer.from(`${MONNIFY_API_KEY}:${MONNIFY_SECRET_KEY}`).toString('base64');
     const { data } = await axios.post(`${MONNIFY_BASE_URL}/v1/auth/login`, { refresh: true }, {
       headers: { 
@@ -225,10 +228,13 @@ export async function validateBankAccount(accountNumber: string, bankCode: strin
  */
 export async function getMerchantBalance() {
   try {
+    checkMonnifyConfig();
     const auth = await getMonnifyToken();
     if (!auth.success) return { success: false, error: auth.error };
-    
-    const accountNumber = process.env.MONNIFY_WALLET_ACCOUNT || '8065933172';
+
+    const accountNumber = process.env.MONNIFY_WALLET_ACCOUNT;
+    if (!accountNumber) throw new Error('MONNIFY_WALLET_ACCOUNT not set');
+
     const { data } = await axios.get(`${MONNIFY_BASE_URL}/v2/disbursements/wallet-balance?accountNumber=${accountNumber}`, {
       headers: { Authorization: `Bearer ${auth.accessToken}` }
     });

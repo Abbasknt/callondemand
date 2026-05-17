@@ -1,5 +1,6 @@
 import { MainNav } from "@/components/layout/main-nav"
 import { Toaster } from "@/components/ui/toaster"
+import { AIConcierge } from "@/components/ai-concierge"
 
 export default function AuthenticatedLayout({
   children,
@@ -14,6 +15,7 @@ export default function AuthenticatedLayout({
           {children}
         </div>
       </main>
+      <AIConcierge />
       <Toaster />
     </div>
   )
