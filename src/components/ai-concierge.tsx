@@ -18,7 +18,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/firebase";
-import { GoogleGenAI } from "@google/genai";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -61,19 +60,13 @@ export function AIConcierge() {
     setIsLoading(true);
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
-
-      const ai = new GoogleGenAI({ apiKey });
-      
-      const chat = ai.chats.create({
-        model: "gemini-3-flash-preview",
-        history: messages.map(m => ({
-          role: m.role === 'ai' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        })),
-        config: {
-          systemInstruction: `You are the Call on Demand (COD) Nigeria Concierge. You help users navigate a multi-service lifestyle platform that includes:
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+            message: input, 
+            history: messages,
+            systemInstruction: `You are the Call on Demand (COD) Nigeria Concierge. You help users navigate a multi-service lifestyle platform that includes:
  - Wallet & Payments (Naira ₦)
  - Logistics & Shipping (Nigeria Hub)
  - Food/Laundry (Unit-based operations)
@@ -83,15 +76,14 @@ export function AIConcierge() {
  Your tone is "Strategic, Elite, and Efficient". Use words like "Synchronized", "Optimized", "Nigeria Hub", and "Scale Up".
  When users ask about scaling, suggest they check the Growth Hub or expand their logistics operations.
  User Name: ${user?.displayName || 'Partner'}.`
-        }
+        }),
       });
-
-      const response = await chat.sendMessage({ message: input });
-      const text = response.text;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Generation failed");
 
       setMessages(prev => [...prev, {
         role: 'ai',
-        content: text || "I'm sorry, I couldn't generate a response.",
+        content: data.text || "I'm sorry, I couldn't generate a response.",
         timestamp: new Date()
       }]);
     } catch (error) {

@@ -33,6 +33,7 @@ import { useAuth } from "@/firebase"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { validateBankAccount, getBanks } from "@/actions/monnify"
+import { sendTwoFactorCode, verifyTwoFactorCode } from "@/actions/auth-2fa"
 
 /**
  * @fileOverview Hardened Settings Hub for Call on Demand.
@@ -64,6 +65,9 @@ export default function SettingsPage() {
   const [accountName, setAccountName] = useState("")
   const [isVerifying, setIsVerifying] = useState(false)
   const [isAccountVerified, setIsAccountVerified] = useState(false)
+  const [isTesting2FA, setIsTesting2FA] = useState(false)
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false)
+  const [verificationCode, setVerificationCode] = useState("")
 
   // 2FA & Notification State
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
@@ -142,7 +146,7 @@ export default function SettingsPage() {
         }
         toast({ title: "Account Verified", description: `Resolved to: ${resolvedName}` });
       } else {
-        toast({ title: "Verification Failed", description: result.error || 'Bank lookup failed.', variant: "destructive" });
+        toast({ title: "Verification Failed", description: result?.error || 'Bank lookup failed.', variant: "destructive" });
       }
     } catch (e) {
       console.error(e);
@@ -161,6 +165,31 @@ export default function SettingsPage() {
         description: val ? `You will now receive verification codes via ${twoFactorMethod}.` : "Login security reduced." 
       });
     }
+  };
+
+  const handleTest2FA = async () => {
+    if (!user?.email) return;
+    setIsTesting2FA(true);
+    const result = await sendTwoFactorCode(user.email, twoFactorMethod);
+    if (result.success) {
+      toast({ title: "Test Code Sent", description: result.message });
+    } else {
+      toast({ title: "Test Failed", description: result.message, variant: "destructive" });
+    }
+    setIsTesting2FA(false);
+  };
+
+  const handleVerifyTestCode = async () => {
+    if (!user?.email) return;
+    setIsVerifyingCode(true);
+    const result = await verifyTwoFactorCode(user.email, verificationCode);
+    if (result.success) {
+      toast({ title: "Verification Successful", description: "2FA method verified." });
+      setVerificationCode("");
+    } else {
+      toast({ title: "Verification Failed", description: result.message, variant: "destructive" });
+    }
+    setIsVerifyingCode(false);
   };
 
   const handleUpdate2FAMethod = (val: 'email' | 'sms') => {
@@ -335,10 +364,21 @@ export default function SettingsPage() {
                   <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 flex gap-3 text-xs">
                     <ShieldCheck className="h-5 w-5 text-primary shrink-0" />
                     <div>
-                      <p className="font-black uppercase text-[10px]">Security Recommendation</p>
+                      <p className="font-black uppercase text-[10px]">Method Verification</p>
                       <p className="text-muted-foreground mt-1 font-medium leading-relaxed">
-                        We recommend Email verification for international partners and SMS for localized nodes.
+                        Test your chosen 2FA method by sending a verification code.
                       </p>
+                      <div className="flex gap-2 mt-3">
+                        <Button variant="outline" size="sm" onClick={handleTest2FA} disabled={isTesting2FA}>
+                          {isTesting2FA ? <Loader2 className="h-3 w-3 animate-spin"/> : "Send Test Code"}
+                        </Button>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <Input value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} placeholder="Enter Code" className="h-9 rounded-lg" />
+                        <Button size="sm" onClick={handleVerifyTestCode} disabled={isVerifyingCode || !verificationCode}>
+                          {isVerifyingCode ? <Loader2 className="h-3 w-3 animate-spin"/> : "Verify Code"}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>

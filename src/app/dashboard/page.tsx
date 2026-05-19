@@ -28,7 +28,6 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
-import { GoogleGenAI } from "@google/genai"
 import { useUser, useDoc, useFirestore, useMemoFirebase, useCollection, setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase"
 import { collection, doc, query, where, limit, orderBy } from "firebase/firestore"
 import { PromotionPopup } from "@/components/promotions/promotion-popup"
@@ -128,18 +127,19 @@ export default function DashboardPage() {
     async function fetchAiTip() {
       if (!user || !mounted) return;
       try {
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-        if (!apiKey) throw new Error("API Key missing");
-        
-        const ai = new GoogleGenAI({ apiKey });
-        const prompt = `Give a very short (max 10 words) helpful lifestyle tip for a user in Nigeria (Africa Hub) named ${user.displayName?.split(' ')[0] || 'Partner'}. Focus on speed or convenience.`;
-        
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: prompt,
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+              message: `Give a very short (max 10 words) helpful lifestyle tip for a user in Nigeria (Africa Hub) named ${user.displayName?.split(' ')[0] || 'Partner'}. Focus on speed or convenience.`, 
+              history: [],
+              systemInstruction: "You are a concise assistant providing lifestyle tips."
+          }),
         });
-
-        setAiTip(response.text || "Top-up your wallet for faster checkout sharp-sharp!");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Failed loading tip");
+        
+        setAiTip(data.text || "Top-up your wallet for faster checkout sharp-sharp!");
       } catch (e) {
         console.error(e);
         setAiTip("Top-up your wallet for faster checkout sharp-sharp!");

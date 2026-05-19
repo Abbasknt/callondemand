@@ -93,7 +93,7 @@ export async function initMonnifyTransaction(params: {
     const auth = await getMonnifyToken();
     if (!auth.success) return { success: false, error: auth.error };
 
-    const { data } = await axios.post(`${MONNIFY_BASE_URL}/v2/transactions/init-transaction`, 
+    const { data } = await axios.post(`${MONNIFY_BASE_URL}/v1/merchant/transactions/init-transaction`, 
       { 
         ...params, 
         contractCode: MONNIFY_CONTRACT_CODE, 
@@ -166,7 +166,8 @@ export async function vendBillPayment(params: {
       amount: params.amount,
       paymentReference: params.paymentReference,
       validationReference: params.validationReference || params.paymentReference,
-      emailAddress: params.emailAddress
+      emailAddress: params.emailAddress,
+      billerCode: params.billerCode
     };
 
     const { data } = await axios.post(`${MONNIFY_BASE_URL}/v1/vas/bills-payment/vend`, payload, { 
@@ -318,7 +319,7 @@ export async function searchTransactions(params: {
     if (params.paymentReference) query += `&paymentReference=${encodeURIComponent(params.paymentReference)}`;
     if (params.amount) query += `&amount=${params.amount}`;
 
-    const { data } = await axios.get(`${MONNIFY_BASE_URL}/v2/transactions/search${query}`, {
+    const { data } = await axios.get(`${MONNIFY_BASE_URL}/v2/merchant/transactions/search${query}`, {
       headers: { Authorization: `Bearer ${auth.accessToken}` },
       timeout: 20000
     });

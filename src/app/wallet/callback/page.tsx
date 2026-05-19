@@ -77,7 +77,7 @@ function CallbackContent() {
           setStatus('success')
         } else {
           setStatus('failed')
-          setErrorMsg(result.error || "The gateway could not confirm this settlement.")
+          setErrorMsg(result?.error || "The gateway could not confirm this settlement.")
         }
       } catch (e) {
         console.error(e);

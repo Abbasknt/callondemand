@@ -407,7 +407,7 @@ export default function TopUpHub() {
       });
       setCurrentStep('result');
     } else {
-      toast({ title: "Fulfillment Error", description: result.error, variant: "destructive" });
+      toast({ title: "Fulfillment Error", description: result?.error || "An unknown error occurred.", variant: "destructive" });
       setCurrentStep('payment');
     }
   };
