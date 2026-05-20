@@ -214,22 +214,29 @@ export default function TopUpHub() {
     if (profile?.phoneNumber && !customerId) {
       setCustomerId(profile.phoneNumber);
     }
-  }, [profile]);
+  }, [profile, customerId]);
 
   useEffect(() => {
+    let isSubscribed = true;
+
     async function syncBillers() {
       if (currentStep === 'config' || currentStep === 'category') {
         const categoriesToFetch = activeCategory === 'DATA' ? ['DATA_BUNDLE', 'DATA'] : [CATEGORY_MAP[activeCategory]];
         let allBillers: any[] = [];
         
         try {
-          await Promise.all(categoriesToFetch.map(async (cat) => {
-            const result = await getBillersByCategory(cat);
-            if (result && result.success) {
-              allBillers = [...allBillers, ...result.response];
-            }
+          const results = await Promise.all(categoriesToFetch.map(async (cat) => {
+            return await getBillersByCategory(cat);
           }));
           
+          results.forEach(result => {
+             if (result && result.success) {
+               allBillers = [...allBillers, ...result.response];
+             }
+          });
+          
+          if (!isSubscribed) return;
+
           // De-duplicate by code
           const uniqueBillers = Array.from(new Map(allBillers.map(b => [b.billerCode || b.code, b])).values());
           setBillers(uniqueBillers);
@@ -267,6 +274,7 @@ export default function TopUpHub() {
                       allProducts = [...allProducts, ...categoryProducts];
                     }
                   }));
+                  if (!isSubscribed) return;
                   setVariations(allProducts);
                   if (activeCategory === 'AIRTIME' && allProducts.length > 0) {
                     setSelectedProduct(allProducts[0]);
@@ -275,9 +283,9 @@ export default function TopUpHub() {
                   }
                 } catch (e) {
                   console.error(e);
-                  setVariations([]);
+                  if (isSubscribed) setVariations([]);
                 } finally {
-                  setIsVerifying(false);
+                  if (isSubscribed) setIsVerifying(false);
                 }
               }
            }
@@ -287,6 +295,7 @@ export default function TopUpHub() {
       }
     }
     syncBillers();
+    return () => { isSubscribed = false; };
   }, [activeCategory, currentStep, selectedNetwork]);
 
   useEffect(() => {

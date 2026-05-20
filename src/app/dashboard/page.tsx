@@ -24,7 +24,8 @@ import {
   RefreshCw,
   BellRing,
   Globe,
-  TrendingUp
+  TrendingUp,
+  FileText
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
@@ -44,6 +45,7 @@ const LIFESTYLE_SERVICES = [
   { id: 'shop', name: "Marketplace", href: "/services/shop", icon: ShoppingBag, desc: "Essentials" },
   { id: 'logistics', name: "Logistics", href: "/logistics", icon: Truck, desc: "Fulfillment" },
   { id: 'shortlet', name: "Shortlets", href: "/services/shortlet", icon: Home, desc: "Verified stays" },
+  { id: 'drive', name: "Google Drive", href: "/dashboard/drive", icon: FileText, desc: "Files & Documents" },
 ];
 
 export default function DashboardPage() {

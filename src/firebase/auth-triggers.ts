@@ -7,8 +7,7 @@ import {
   signInAnonymously,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  UserCredential,
-  browserPopupRedirectResolver
+  UserCredential
 } from 'firebase/auth';
 
 /** 
@@ -18,13 +17,15 @@ import {
 export function initiateGoogleSignInRedirect(authInstance: Auth): void {
   if (!authInstance) return;
   const provider = new GoogleAuthProvider();
-  signInWithRedirect(authInstance, provider, browserPopupRedirectResolver);
+  provider.addScope('https://www.googleapis.com/auth/drive');
+  signInWithRedirect(authInstance, provider);
 }
 
 export async function initiateGoogleSignInPopup(authInstance: Auth): Promise<UserCredential | null> {
   if (!authInstance) return null;
   const provider = new GoogleAuthProvider();
-  return await signInWithPopup(authInstance, provider, browserPopupRedirectResolver);
+  provider.addScope('https://www.googleapis.com/auth/drive');
+  return await signInWithPopup(authInstance, provider);
 }
 
 export function initiateAnonymousSignIn(authInstance: Auth): void {

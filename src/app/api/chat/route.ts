@@ -1,8 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 
+const apiKey = process.env.GEMINI_API_KEY;
+if (!apiKey) {
+  console.error('GEMINI_API_KEY is not defined');
+}
+
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+  apiKey: apiKey,
   httpOptions: {
     headers: {
       'User-Agent': 'aistudio-build',
@@ -11,6 +16,9 @@ const ai = new GoogleGenAI({
 });
 
 export async function POST(req: NextRequest) {
+  if (!process.env.GEMINI_API_KEY) {
+    return NextResponse.json({ error: "API key not configured" }, { status: 500 });
+  }
   try {
     const { message, history, systemInstruction } = await req.json();
     
@@ -21,7 +29,7 @@ export async function POST(req: NextRequest) {
     }));
 
     const chat = ai.chats.create({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash", // Use a standard, supported model
         history: formattedHistory,
         config: {
             systemInstruction
