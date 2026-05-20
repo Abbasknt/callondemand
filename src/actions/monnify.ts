@@ -54,10 +54,17 @@ function extractArray(responseBody: any): any[] {
   return [];
 }
 
+let cachedToken: string | null = null;
+let tokenExpiry: number = 0;
+
 /**
  * Authenticates with Monnify to retrieve a Bearer Token.
  */
 export async function getMonnifyToken() {
+  if (cachedToken && Date.now() < tokenExpiry) {
+    return { success: true, accessToken: cachedToken };
+  }
+  
   try {
     checkMonnifyConfig();
     const authString = Buffer.from(`${MONNIFY_API_KEY}:${MONNIFY_SECRET_KEY}`).toString('base64');
@@ -69,7 +76,10 @@ export async function getMonnifyToken() {
       timeout: 15000
     });
     if (data.requestSuccessful && data.responseBody) {
-      return { success: true, accessToken: String(data.responseBody.accessToken) };
+      cachedToken = String(data.responseBody.accessToken);
+      // Assume token is valid for 30 minutes, with a 5-minute buffer (600,000ms = 10 mins)
+      tokenExpiry = Date.now() + (30 * 60 * 1000) - (5 * 60 * 1000);
+      return { success: true, accessToken: cachedToken };
     }
     return { success: false, error: data.responseMessage || 'Auth failed' };
   } catch (error: any) {

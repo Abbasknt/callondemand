@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     }));
 
     const chat = ai.chats.create({
-        model: "gemini-2.0-flash", // Use a standard, supported model
+        model: "gemini-3.5-flash", // Use a standard, supported model
         history: formattedHistory,
         config: {
             systemInstruction

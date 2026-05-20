@@ -12,7 +12,7 @@ import { getVertexAI, VertexAI } from 'firebase/vertexai';
 export function initializeFirebase() {
   const existingApps = getApps();
   const firebaseApp = existingApps.length ? getApp() : initializeApp(firebaseConfig);
-  const dbId = firebaseConfig.firestoreDatabaseId === '(default)' ? undefined : firebaseConfig.firestoreDatabaseId;
+  const dbId = (firebaseConfig as any).firestoreDatabaseId === '(default)' ? undefined : (firebaseConfig as any).firestoreDatabaseId;
 
   let firestore: Firestore;
   try {
