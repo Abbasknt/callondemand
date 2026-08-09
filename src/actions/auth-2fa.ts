@@ -1,6 +1,6 @@
 "use server"
 
-import { db } from "@/firebase"
+import { db } from "@/firebase/server"
 import { collection, addDoc, query, where, getDocs, orderBy, limit, deleteDoc, Timestamp } from "firebase/firestore"
 
 /**

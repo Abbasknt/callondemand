@@ -23,6 +23,7 @@ import Image from "next/image"
 import { useUser, useFirestore, useCollection, useDoc, useMemoFirebase } from "@/firebase"
 import { collection, query, where, doc, orderBy, limit } from "firebase/firestore"
 import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { WalletBalanceDisplay } from "@/components/wallet-balance-display"
 import { useToast } from "@/hooks/use-toast"
 
 export default function CrowdfundingPage() {
@@ -165,10 +166,7 @@ export default function CrowdfundingPage() {
         </Tabs>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full text-primary font-bold border border-primary/20">
-            <Wallet className="h-4 w-4" />
-            ₦{(wallet?.balance || 0).toLocaleString()}
-          </div>
+          <WalletBalanceDisplay balance={wallet?.balance} badgeStyle />
         </div>
       </div>
 

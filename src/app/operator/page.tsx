@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
+import { ConsignmentStepTracker } from "@/components/consignment-step-tracker"
 import { 
   Truck, 
   MapPin, 
@@ -338,7 +339,7 @@ export default function OperatorHub() {
                 <div key={task.id} className="p-6 flex items-center justify-between group cursor-pointer hover:bg-muted/30 transition-all" onClick={() => setSelectedTask(task)}>
                   <div className="flex items-center gap-4">
                     <div className="h-10 w-10 rounded-xl bg-green-100 flex items-center justify-center text-green-600 shadow-inner group-hover:scale-110 transition-transform">{getServiceIcon(task.serviceType)}</div>
-                    <div><p className="font-black text-xs uppercase">{task.id.slice(0, 8)}</p><p className="text-[8px] text-muted-foreground font-black uppercase mt-0.5">{task.serviceType} • {new Date(task.createdAt).toLocaleDateString()}</p></div>
+                    <div><p className="font-black text-xs uppercase">{task.id.slice(0, 8)}</p><p className="text-[8px] text-muted-foreground font-black uppercase mt-0.5">{task.serviceType} • {mounted && task.createdAt ? new Date(task.createdAt).toLocaleDateString() : '...'}</p></div>
                   </div>
                   <Badge className="bg-green-500 text-white border-none font-black uppercase text-[7px] h-4 px-2">Settled</Badge>
                 </div>
@@ -361,12 +362,7 @@ export default function OperatorHub() {
                 <p className="text-xs font-bold text-muted-foreground mt-1 uppercase">{selectedTask.serviceType}</p>
               </SheetHeader>
               <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                <div className="space-y-4 bg-muted/30 p-6 rounded-[2rem] border shadow-inner">
-                  <div className="flex justify-between items-end"><p className="font-black text-accent uppercase text-[8px] tracking-widest">Protocol Phase</p><p className="text-xl font-black tracking-tighter">LIVE SYNC</p></div>
-                  <div className="h-3 w-full bg-muted rounded-full overflow-hidden border-2 border-white">
-                    <div className="h-full bg-accent transition-all duration-1000" style={{ width: selectedTask.status === 'Delivered' ? '100%' : selectedTask.status === 'In Transit' ? '75%' : selectedTask.status === 'Picked Up' ? '50%' : selectedTask.status === 'Claimed' ? '25%' : '10%' }} />
-                  </div>
-                </div>
+                <ConsignmentStepTracker status={selectedTask.status} statusHistory={selectedTask.statusHistory} />
                 <div className="bg-accent/5 p-6 rounded-[2rem] border-2 border-dashed border-accent/20 flex flex-col gap-4">
                   <div>
                     <p className="text-[8px] font-black text-accent uppercase tracking-widest">Partner Identity</p>
@@ -400,7 +396,7 @@ export default function OperatorHub() {
                     </div>
                     <div className="flex justify-between text-[10px]">
                       <span className="text-muted-foreground">Handshake Complete</span>
-                      <span className="font-bold">{new Date(selectedTask.lastUpdatedAt).toLocaleString()}</span>
+                      <span className="font-bold">{mounted && selectedTask.lastUpdatedAt ? new Date(selectedTask.lastUpdatedAt).toLocaleString() : '...'}</span>
                     </div>
                   </div>
                 )}

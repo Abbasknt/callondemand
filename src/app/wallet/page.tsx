@@ -32,7 +32,9 @@ import { doc, collection, query, orderBy, limit, getDocs, where, increment } fro
 import { setDocumentNonBlocking, addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
-import { initMonnifyTransaction, getReservedAccount, searchTransactions } from "@/actions/monnify"
+import { useBalanceVisibility } from "@/hooks/use-balance-visibility"
+import { initMonnifyTransaction, getReservedAccount, searchTransactions, disburseFunds } from "@/actions/monnify"
+import { sendTwoFactorCode, verifyTwoFactorCode } from "@/actions/auth-2fa"
 import { triggerReceiptPrint, exportToCsv, shareReceipt } from "@/lib/export-utils"
 import { RefreshCw, RotateCcw } from "lucide-react"
 import { BrandLogo } from "@/components/brand-logo"
@@ -49,7 +51,7 @@ export default function WalletPage() {
   const firestore = useFirestore()
   const [depositAmount, setDepositAmount] = useState("")
   const [selectedMethod, setSelectedMethod] = useState("card")
-  const [showBalance, setShowBalance] = useState(false)
+  const { showBalance, toggleShowBalance, formatBalance } = useBalanceVisibility(false)
   const [isInitializingPayment, setIsInitializingPayment] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -241,7 +243,6 @@ export default function WalletPage() {
 
     if (profile?.twoFactorEnabled) {
       setIsWithdrawing(true);
-      const { sendTwoFactorCode } = await import("@/actions/auth-2fa");
       const res = await sendTwoFactorCode(user?.email || '', profile.twoFactorMethod || 'email');
       if (res.success) {
         setShowWithdrawDialog(true);
@@ -261,6 +262,27 @@ export default function WalletPage() {
     setIsWithdrawing(true);
     try {
       const amount = Number(withdrawAmount);
+      const reference = `WDR-${Date.now()}`;
+      
+      const disbRes = await disburseFunds({
+        amount,
+        reference,
+        narration: `Call on Demand Wallet Withdrawal - ${user.displayName || user.email}`,
+        destinationBankCode: profile?.bankCode || '058',
+        destinationAccountNumber: profile?.bankAccountNumber || '0123456789',
+        destinationAccountName: profile?.bankAccountName || user.displayName || 'Verified Account'
+      });
+
+      if (!disbRes || !disbRes.success) {
+        toast({ 
+          title: "Gateway Settlement Declined", 
+          description: disbRes?.error || "Could not process bank transfer.", 
+          variant: "destructive" 
+        });
+        setIsWithdrawing(false);
+        return;
+      }
+
       const txColRef = collection(firestore, 'users', user.uid, 'wallet', 'default', 'transactions');
       
       updateDocumentNonBlocking(walletRef, {
@@ -270,19 +292,20 @@ export default function WalletPage() {
       addDocumentNonBlocking(txColRef, {
         type: 'Withdrawal',
         amount: amount,
-        description: `External Transfer to Bank`,
+        description: `Bank Transfer Settlement (${disbRes.response?.transactionReference || reference})`,
         transactionDate: new Date().toISOString(),
         status: 'Completed',
-        reference: `WDR-${Date.now()}`
+        reference: reference,
+        gatewayId: disbRes.response?.transactionReference || reference
       });
 
-      toast({ title: "Withdrawal Successful", description: `₦${amount.toLocaleString()} sent to your verified bank.` });
+      toast({ title: "Withdrawal Settlement Executed", description: `₦${amount.toLocaleString()} dispatched to bank.` });
       setWithdrawAmount("");
       setShowWithdrawDialog(false);
       setTwoFactorCode("");
     } catch (e) {
       console.error(e);
-      toast({ title: "Withdrawal Failed", variant: "destructive" });
+      toast({ title: "Withdrawal Protocol Failure", variant: "destructive" });
     } finally {
       setIsWithdrawing(false);
     }
@@ -291,7 +314,6 @@ export default function WalletPage() {
   const handleVerifyWithdrawal = async () => {
     if (!user?.email) return;
     setIsVerifyingWithdrawal(true);
-    const { verifyTwoFactorCode } = await import("@/actions/auth-2fa");
     const result = await verifyTwoFactorCode(user.email, twoFactorCode);
     if (result.success) {
       await processWithdrawal();
@@ -361,13 +383,14 @@ export default function WalletPage() {
                   <Shield className="h-3 w-3" /> Unified Balance
                 </CardTitle>
                 <button 
-                  className="text-white/60 hover:text-white transition-colors" 
-                  onClick={() => setShowBalance(!showBalance)}
+                  className="text-white/60 hover:text-white transition-colors p-1" 
+                  onClick={toggleShowBalance}
+                  title={showBalance ? "Hide balance" : "View balance"}
                 >
                   {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
                 <button 
-                  className={cn("text-white/60 hover:text-white transition-colors ml-2", isSyncing && "animate-spin")} 
+                  className={cn("text-white/60 hover:text-white transition-colors ml-2 p-1", isSyncing && "animate-spin")} 
                   onClick={() => handleSyncWallet()}
                   disabled={isSyncing}
                 >
@@ -377,7 +400,7 @@ export default function WalletPage() {
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-black mb-6 tracking-tighter">
-                {isWalletLoading ? <Loader2 className="animate-spin h-8 w-8" /> : showBalance ? `₦ ${(wallet?.balance || 0).toLocaleString()}` : "₦ ••••••••"}
+                {isWalletLoading ? <Loader2 className="animate-spin h-8 w-8" /> : formatBalance(wallet?.balance)}
               </div>
               <div className="flex gap-2">
                 <Badge variant="outline" className="bg-white/10 border-none text-white px-3 py-1 text-[8px] font-black tracking-widest uppercase">NGN HUB</Badge>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -33,7 +33,7 @@ export default function RegisterPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-  const handleProfileSync = async (user: any) => {
+  const handleProfileSync = useCallback(async (user: any) => {
     if (!firestore) return;
     const userDocRef = doc(firestore, 'users', user.uid);
     const userSnap = await getDocumentSafe(userDocRef);
@@ -101,7 +101,7 @@ export default function RegisterPage() {
       toast({ title: "Partner Account Secured", description: "Provisioned via Google authorization." });
       router.push("/onboarding/survey");
     }
-  }
+  }, [firestore, router, toast]);
 
   // Handle Google Sign-In Redirect Result (Fallback)
   useEffect(() => {
@@ -115,7 +115,7 @@ export default function RegisterPage() {
     }).catch((err) => {
       console.error("Google Auth Error:", err);
     }).finally(() => setLoading(false));
-  }, [auth, firestore, router, toast]);
+  }, [auth, firestore, router, toast, handleProfileSync]);
 
   const handleGoogleSignUp = async () => {
     if (!auth) return;
@@ -137,6 +137,15 @@ export default function RegisterPage() {
     e.preventDefault()
     setError(null)
     
+    if (!auth) {
+      toast({ 
+        title: "Service Initializing", 
+        description: "Authentication service is initializing. Please try again or sign up with Google.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
     if (!firstName || !lastName || !email || !password || !phoneNumber) {
       toast({ title: "Incomplete Details", description: "All fields are required.", variant: "destructive" });
       return;
@@ -225,16 +234,16 @@ export default function RegisterPage() {
       });
       router.push("/onboarding/survey")
     } catch (err: any) {
-      console.error(err);
+      console.error("Registration Auth Error:", err);
       const code = err?.code || 'unknown';
-      let message = err.message;
+      let message = err.message || "Registration failed.";
       
       if (code === 'auth/email-already-in-use') {
         message = "This email is already registered. Try logging in or use a different account.";
       } else if (code === 'auth/weak-password') {
         message = "Security risk: Password too weak. Use at least 6 characters with mixed symbols.";
-      } else if (code === 'auth/invalid-credential') {
-        message = "Identity validation failed. Please check your inputs or try another email provider.";
+      } else if (code === 'auth/invalid-credential' || code === 'auth/operation-not-allowed') {
+        message = "Identity validation failed. If using Email/Password registration, please ensure Email/Password provider is enabled in your Firebase Console (Authentication > Sign-in method). Alternatively, you can register using 'Sign up with Google'.";
       }
 
       setError(message);

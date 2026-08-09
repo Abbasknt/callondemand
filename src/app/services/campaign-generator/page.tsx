@@ -19,7 +19,7 @@ import {
   Megaphone,
   ArrowRight
 } from "lucide-react"
-import { adminContentGenerator, type AdminContentGeneratorInput } from "@/ai/flows/admin-content-generator-flow"
+import { generateAdminContent, type AdminContentGeneratorInput } from "@/actions/admin-content"
 import { useToast } from "@/hooks/use-toast"
 import { PageTransition } from "@/components/page-transition"
 
@@ -55,7 +55,7 @@ export default function AIContentGeneratorPage() {
     
     try {
       const input: any = { contentType, ...formData }
-      const result = await adminContentGenerator(input as AdminContentGeneratorInput)
+      const result = await generateAdminContent(input as AdminContentGeneratorInput)
       setGeneratedContent(result.generatedContent)
       toast({ title: "Content Generated!", description: "AI has crafted your listing description." })
     } catch (e) {

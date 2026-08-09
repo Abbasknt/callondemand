@@ -66,6 +66,12 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       async (serverError: FirestoreError) => {
+        if (serverError.code === 'unavailable' || serverError.code === 'cancelled') {
+          console.warn(`Firestore collection snapshot offline notice [${serverError.code}]`);
+          setIsLoading(false);
+          return;
+        }
+
         const path: string =
           memoizedTargetRefOrQuery.type === 'collection'
             ? (memoizedTargetRefOrQuery as CollectionReference).path
@@ -86,8 +92,8 @@ export function useCollection<T = any>(
     return () => unsubscribe();
   }, [memoizedTargetRefOrQuery]);
 
-  if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
-    throw new Error(memoizedTargetRefOrQuery + ' was not properly memoized using useMemoFirebase');
+  if (memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
+    console.warn('Target reference or query was not properly memoized using useMemoFirebase');
   }
   return { data, isLoading, error };
 }

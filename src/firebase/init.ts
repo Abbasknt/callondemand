@@ -2,8 +2,7 @@
 import firebaseConfig from '../../firebase-applet-config.json';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { initializeFirestore, getFirestore, Firestore, setLogLevel } from 'firebase/firestore';
-import { getVertexAI, VertexAI } from 'firebase/vertexai';
+import { initializeFirestore, getFirestore, Firestore, setLogLevel, doc, getDocFromServer } from 'firebase/firestore';
 
 /**
  * Isolated initialization logic to prevent circular dependency cycles.
@@ -15,46 +14,43 @@ export function initializeFirebase() {
   const dbId = (firebaseConfig as any).firestoreDatabaseId === '(default)' ? undefined : (firebaseConfig as any).firestoreDatabaseId;
 
   let firestore: Firestore;
+  if (typeof window === 'undefined') {
+    firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
+    const auth = getAuth(firebaseApp);
+    return {
+      firebaseApp,
+      auth,
+      firestore,
+      vertexAI: null as any
+    };
+  }
+
   try {
-    /**
-     * Hardened for Studio/Workstation environments:
-     * WebSockets/gRPC streams are restricted in proxied dev environments.
-     * Force Long Polling to avoid 'Listen' stream cancellations.
-     */
     const settings = {
-      experimentalForceLongPolling: true,
-      experimentalAutoDetectLongPolling: false,
+      experimentalAutoDetectLongPolling: true,
     };
 
     firestore = dbId 
       ? initializeFirestore(firebaseApp, settings, dbId)
       : initializeFirestore(firebaseApp, settings);
     
-    // Suppress cancelation logs in dev environment
-    setLogLevel('error');
+    setLogLevel('silent');
   } catch (e) {
-    // Fallback if already initialized (persist settings)
     firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
   }
 
-  const auth = getAuth(firebaseApp);
-  const vertexAI = getVertexAI(firebaseApp);
-
-  // Diagnostic connection warm-up
-  (async () => {
-    try {
-      const { doc, getDocFromServer } = await import('firebase/firestore');
-      await getDocFromServer(doc(firestore, '_health', 'check')).catch(() => {});
-      console.log("Firestore Hub: Active");
-    } catch (e) {
-      // Silent fail for background warm-up
+  getDocFromServer(doc(firestore, 'test', 'connection')).catch((error) => {
+    if (error instanceof Error && error.message.includes('offline')) {
+      console.warn("Firestore client operating in offline mode.", error.message);
     }
-  })();
+  });
+
+  const auth = getAuth(firebaseApp);
 
   return {
     firebaseApp,
     auth,
     firestore,
-    vertexAI
+    vertexAI: null as any
   };
 }

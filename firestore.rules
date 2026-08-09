@@ -70,34 +70,34 @@ service cloud.firestore {
              data.status in ['Active', 'Inactive'];
     }
 
-    // --- Service Catalogs: Locked for Admin, Discovered by Authenticated Partners ---
+    // --- Service Catalogs: Locked for Admin, Discovered by Authenticated Partners & Guest Customers ---
     
     match /menuItems/{id} { 
-      allow read, list: if isSignedIn(); 
+      allow read, list: if true; 
       allow write: if isAdmin(); 
     }
     match /productListings/{id} { 
-      allow read, list: if isSignedIn(); 
+      allow read, list: if true; 
       allow write: if isAdmin(); 
     }
     match /laundryServiceOptions/{id} { 
-      allow read, list: if isSignedIn(); 
+      allow read, list: if true; 
       allow write: if isAdmin(); 
     }
     match /shortletListings/{id} { 
-      allow read, list: if isSignedIn(); 
+      allow read, list: if true; 
       allow write: if isAdmin(); 
     }
     match /logisticsServiceOptions/{id} { 
-      allow read, list: if isSignedIn(); 
+      allow read, list: if true; 
       allow write: if isAdmin(); 
     }
     match /campaigns/{id} { 
-      allow read, list: if isSignedIn(); 
+      allow read, list: if true; 
       allow write: if isAdmin(); 
     }
     match /investmentPlans/{id} { 
-      allow read, list: if isSignedIn(); 
+      allow read, list: if true; 
       allow write: if isAdmin(); 
     }
     match /operational_units/{id} { 
@@ -113,8 +113,10 @@ service cloud.firestore {
     // --- Logistics & Fulfillment Manifest ---
 
     match /deliveryTasks/{taskId} {
-      // Visibility: Admin/Operator see all. Customers see their own (validated by userId field).
-      allow read, list: if isSignedIn() && (isAdmin() || existing().customerUserId == request.auth.uid || existing().operatorId == request.auth.uid);
+      // Direct Lookup: Anyone with the exact taskId (deep tracking link) can view the document
+      allow get: if true;
+      // Listing: Admin/Operator see all. Customers see their own (validated by userId field).
+      allow list: if isSignedIn() && (isAdmin() || existing().customerUserId == request.auth.uid || existing().operatorId == request.auth.uid);
       
       allow create: if isSignedIn() && isValidDeliveryTask(incoming()) && (
         isAdmin() || (incoming().customerUserId == request.auth.uid && !incoming().keys().contains('priority'))
@@ -138,7 +140,11 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == userId && isValidUserProfile(incoming());
       
       allow update: if isSignedIn() && (
-        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['firstName', 'lastName', 'phoneNumber', 'bankName', 'accountNumber', 'accountName'])) ||
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly([
+          'firstName', 'lastName', 'phoneNumber', 'bankName', 'accountNumber', 'accountName',
+          'bankAccountVerified', 'bankAccountVerifiedAt', 'twoFactorEnabled', 'twoFactorMethod',
+          'notificationPreferences', 'walletThreshold', 'walletThresholdEnabled', 'companyKyc'
+        ])) ||
         // Only System Root can promote someone to Admin
         (isAdmin() && incoming().role != 'Admin') ||
         (isSystemRoot() && incoming().role == 'Admin')

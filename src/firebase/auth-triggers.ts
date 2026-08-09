@@ -17,14 +17,12 @@ import {
 export function initiateGoogleSignInRedirect(authInstance: Auth): void {
   if (!authInstance) return;
   const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/drive');
   signInWithRedirect(authInstance, provider);
 }
 
 export async function initiateGoogleSignInPopup(authInstance: Auth): Promise<UserCredential | null> {
   if (!authInstance) return null;
   const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/drive');
   return await signInWithPopup(authInstance, provider);
 }
 

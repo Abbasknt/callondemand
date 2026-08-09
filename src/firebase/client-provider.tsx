@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, type ReactNode } from 'react';
+import React, { useState, useEffect, type ReactNode } from 'react';
 import { FirebaseProvider } from './provider';
 import { initializeFirebase } from './init';
 
@@ -9,20 +9,31 @@ interface FirebaseClientProviderProps {
 }
 
 /**
- * Ensures Firebase is initialized exactly once on the client side.
- * Imports from init.ts to avoid circular cycles with the index barrel.
+ * Ensures Firebase is initialized safely on the client side.
  */
 export function FirebaseClientProvider({ children }: FirebaseClientProviderProps) {
-  const firebaseServices = useMemo(() => {
-    return initializeFirebase();
+  const [services, setServices] = useState<{
+    firebaseApp: any;
+    auth: any;
+    firestore: any;
+    vertexAI: any;
+  }>({
+    firebaseApp: null,
+    auth: null,
+    firestore: null,
+    vertexAI: null,
+  });
+
+  useEffect(() => {
+    setServices(initializeFirebase());
   }, []);
 
   return (
     <FirebaseProvider
-      firebaseApp={firebaseServices.firebaseApp}
-      auth={firebaseServices.auth}
-      firestore={firebaseServices.firestore}
-      vertexAI={firebaseServices.vertexAI}
+      firebaseApp={services.firebaseApp}
+      auth={services.auth}
+      firestore={services.firestore}
+      vertexAI={services.vertexAI}
     >
       {children}
     </FirebaseProvider>

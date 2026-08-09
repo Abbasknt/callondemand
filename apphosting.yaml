@@ -1,35 +1,42 @@
 runConfig:
-  maxInstances: 10
-  memory: 2Gi
-
+  maxInstances: 1
 env:
-  - variable: NEXT_PUBLIC_APP_NAME
-    value: "Call on Demand.com"
-  - variable: NEXT_PUBLIC_APP_URL
-    value: "https://callondemandbiz.com"
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     value: "call-on-demand-79718192-79822"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: "AIzaSyCpo5XuqZKrZhfbS8-3-W34shR7otN_4Yw"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:942634528667:web:7d56d1396a47aefbd83b3e"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
     value: "call-on-demand-79718192-79822.firebaseapp.com"
-  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
-    value: "1:942634528667:web:fa9c969e3805bdc3d83b3e"
-  - variable: NEXT_PUBLIC_MONNIFY_API_KEY
-    value: "MK_PROD_VRXL0T3UDD"
-  - variable: NEXT_PUBLIC_MONNIFY_CONTRACT_CODE
-    value: "730430763017"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "call-on-demand-79718192-79822.firebasestorage.app"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "942634528667"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_FIRESTORE_DATABASE_ID
+    value: "ai-studio-callondemandglob-a9970b43-ab5c-4921-b5bb-2713c617e30a"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: MONNIFY_WALLET_ACCOUNT
     value: "8065933172"
-  - variable: MONNIFY_SECRET_KEY
-    secret: MONNIFY_SECRET_KEY
-    availability:
-      - RUNTIME
-  - variable: GOOGLE_GENAI_API_KEY
-    secret: GOOGLE_GENAI_API_KEY
-    availability:
-      - RUNTIME
-  - variable: PINNED_API_KEY
-    secret: myApiKeySecret
     availability:
       - RUNTIME

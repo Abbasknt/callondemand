@@ -1,5 +1,6 @@
 {
   "firestore": {
+    "database": "ai-studio-callondemandglob-a9970b43-ab5c-4921-b5bb-2713c617e30a",
     "rules": "firestore.rules"
   }
 }

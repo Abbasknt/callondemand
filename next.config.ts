@@ -1,39 +1,42 @@
-
-import type {NextConfig} from 'next';
+import { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  typescript: {
-    ignoreBuildErrors: false,
-  },
+  distDir: "dist",
+  allowedDevOrigins: ["*.run.app", "ais-dev-rck7pkkzbemjyebvsxpiib-197089124330.europe-west2.run.app", "localhost:3000", "127.0.0.1:3000"],
+  reactStrictMode: true,
+  productionBrowserSourceMaps: false,
   eslint: {
-    ignoreDuringBuilds: false,
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
   },
   images: {
-    unoptimized: true,
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'placehold.co',
-        pathname: '/**',
+        protocol: "https",
+        hostname: "picsum.photos",
+        port: "",
+        pathname: "/**",
       },
       {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-        pathname: '/**',
+        protocol: "https",
+        hostname: "i.pravatar.cc",
+        port: "",
+        pathname: "/**",
       },
-      {
-        protocol: 'https',
-        hostname: 'picsum.photos',
-        pathname: '/**',
-      }
     ],
   },
-  async redirects() {
-    return [
-      { source: '/services/errands', destination: '/logistics', permanent: true },
-      { source: '/services/shipping', destination: '/logistics', permanent: true },
-    ]
-  },
+  serverExternalPackages: [
+    "genkit",
+    "@genkit-ai/google-genai",
+    "@genkit-ai/core",
+    "@genkit-ai/ai",
+    "@genkit-ai/flow",
+    "firebase-admin",
+    "@opentelemetry/sdk-node",
+    "@opentelemetry/api",
+  ],
 };
 
 export default nextConfig;

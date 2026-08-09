@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect, useContext } from "react"
+import Image from "next/image"
+import { PhoneCall } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FirebaseContext, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
@@ -16,7 +18,6 @@ export function BrandLogo({ className, iconOnly = false, light = false }: BrandL
   useEffect(() => setMounted(true), []);
 
   const firebase = useContext(FirebaseContext);
-  // Safe extraction for SSR/Early boot
   const firestore = (mounted && firebase) ? firebase.firestore : null;
   
   const settingsRef = useMemoFirebase(() => {
@@ -26,46 +27,49 @@ export function BrandLogo({ className, iconOnly = false, light = false }: BrandL
   
   const { data: appSettings } = useDoc(settingsRef);
 
-  const logoUrl = appSettings?.logoUrl;
+  const logoUrl = appSettings?.logoUrl || "/logo.png";
   const appName = appSettings?.appName || "Call on Demand";
-  const nameParts = appName.split(" ");
-  const firstPart = nameParts.slice(0, -1).join(" ") || "Call on";
-  const lastPart = nameParts[nameParts.length - 1] || "Demand";
 
   return (
-    <div className={cn("flex items-center gap-3 select-none", className)}>
+    <div className={cn("flex items-center gap-3 select-none group", className)}>
       <div className={cn(
-        "relative h-10 w-10 rounded-full flex items-center justify-center p-1 border-2 transition-transform hover:scale-105 overflow-hidden",
-        light ? "border-white/20 bg-white/10" : "border-primary/20 bg-primary/5"
+        "relative h-10 w-10 rounded-full flex items-center justify-center p-0.5 shadow-sm transition-transform group-hover:scale-105 overflow-hidden shrink-0 bg-white border border-slate-200/60",
+        light 
+          ? "bg-white/90 text-slate-900 backdrop-blur-md border-white/40" 
+          : "bg-white text-slate-900"
       )}>
         {logoUrl ? (
-          <div className="relative w-full h-full">
-            <img
+          <div className="relative w-full h-full rounded-full overflow-hidden">
+            <Image
               src={logoUrl}
               alt={appName}
-              className="w-full h-full object-contain"
+              fill
+              unoptimized
+              referrerPolicy="no-referrer"
+              className="object-cover"
             />
           </div>
         ) : (
-          <svg
-            viewBox="0 0 100 100"
-            className={cn("w-full h-full", light ? "fill-white" : "fill-primary")}
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M50 15 C65 15 80 25 85 45 C70 40 55 40 40 45 C35 30 40 20 50 15 Z" />
-            <path d="M30 65 L70 65 L70 75 L30 75 Z" opacity="0.5" />
-            <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4" />
-          </svg>
+          <PhoneCall className="h-5 w-5 stroke-[2.5]" />
         )}
       </div>
       {!iconOnly && (
-        <span className={cn(
-          "font-black tracking-tighter text-xl uppercase",
-          light ? "text-white" : "text-foreground"
-        )}>
-          {firstPart} <span className="text-primary italic">{lastPart}</span>
-        </span>
+        <div className="flex flex-col leading-tight">
+          <span className={cn(
+            "font-bold text-lg tracking-tight",
+            light ? "text-white" : "text-slate-900"
+          )}>
+            Call on <span className="text-primary font-extrabold">Demand</span>
+          </span>
+          <span className={cn(
+            "text-[10px] font-medium tracking-wider uppercase opacity-75",
+            light ? "text-white/80" : "text-slate-500"
+          )}>
+            Lifestyle Services
+          </span>
+        </div>
       )}
     </div>
   )
 }
+

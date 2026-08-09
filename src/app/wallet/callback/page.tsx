@@ -31,6 +31,10 @@ function CallbackContent() {
   
   const reference = searchParams.get('paymentReference') || searchParams.get('transactionReference') || searchParams.get('reference');
 
+  const amountParam = searchParams.get('amount') || searchParams.get('amountPaid');
+  const expectedAmount = amountParam ? Number(amountParam) : undefined;
+  const serviceName = searchParams.get('service') || searchParams.get('serviceName');
+
   const walletRef = useMemoFirebase(() => {
     if (!firestore || !user?.uid) return null;
     return doc(firestore, 'users', user.uid, 'wallet', 'default');
@@ -45,10 +49,10 @@ function CallbackContent() {
       }
 
       try {
-        const result = await verifyTransaction(reference)
+        const result = await verifyTransaction(reference, expectedAmount)
         
         if (result && result.success && (result.response?.paymentStatus === 'PAID' || result.response?.status === 'SUCCESS')) {
-          const settledAmount = result.response.amount;
+          const settledAmount = result.response.amount || expectedAmount || 0;
           setTxData(result.response)
           
           if (user && walletRef && !updateProcessed.current) {
@@ -56,18 +60,29 @@ function CallbackContent() {
             const hasBeenProcessed = sessionStorage.getItem(sessionKey);
             
             if (!hasBeenProcessed) {
-              setDocumentNonBlocking(walletRef, { 
-                balance: increment(settledAmount),
-                lastDepositAt: new Date().toISOString()
-              }, { merge: true });
+              const isServicePayment = !!serviceName;
+              const txType = isServicePayment ? 'Payment' : 'Deposit';
+              const description = isServicePayment 
+                ? `Service Payment (${serviceName}) via Monnify`
+                : `Wallet Funding: ${result.response.paymentMethod || 'Monnify Direct'}`;
+
+              // If it's a deposit, increment balance; if it's direct service payment, log payment transaction
+              if (!isServicePayment) {
+                setDocumentNonBlocking(walletRef, { 
+                  balance: increment(settledAmount),
+                  lastDepositAt: new Date().toISOString()
+                }, { merge: true });
+              }
 
               addDocumentNonBlocking(collection(walletRef, 'transactions'), {
-                type: 'Deposit',
+                type: txType,
                 amount: settledAmount,
-                description: `Wallet Funding: ${result.response.paymentMethod || 'Portal'}`,
+                description: description,
                 transactionDate: new Date().toISOString(),
                 status: 'Completed',
-                reference: reference
+                reference: reference,
+                paymentMethod: result.response.paymentMethod || 'Monnify',
+                service: serviceName || 'Wallet'
               });
 
               sessionStorage.setItem(sessionKey, 'true');
@@ -86,10 +101,10 @@ function CallbackContent() {
       }
     }
 
-    if (user && firestore && walletRef) {
+    if (reference) {
       checkAndProcessStatus()
     }
-  }, [reference, user, !!firestore, !!walletRef])
+  }, [reference, user, firestore, walletRef, expectedAmount, serviceName])
 
   return (
     <Card className="w-full max-w-md shadow-2xl border-none rounded-[3rem] overflow-hidden bg-white">

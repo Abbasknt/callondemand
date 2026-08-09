@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -33,7 +33,7 @@ export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-  const handleProfileSync = async (user: any) => {
+  const handleProfileSync = useCallback(async (user: any) => {
     if (!firestore) return;
     const userDocRef = doc(firestore, 'users', user.uid);
     const userSnap = await getDocumentSafe(userDocRef);
@@ -101,7 +101,7 @@ export default function LoginPage() {
       toast({ title: "Welcome to COD!", description: "Profile initialized via Google." });
       router.push("/onboarding/survey");
     }
-  }
+  }, [firestore, router, toast]);
 
   // Handle Google Sign-In Redirect Result (Fallback)
   useEffect(() => {
@@ -115,10 +115,18 @@ export default function LoginPage() {
     }).catch((err) => {
       console.error("Google Auth Error:", err);
     }).finally(() => setLoading(false));
-  }, [auth, firestore, router, toast]);
+  }, [auth, firestore, router, toast, handleProfileSync]);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!auth) {
+      toast({
+        title: "Service Initializing",
+        description: "Authentication is initializing. Please try again or use Google Sign-In.",
+        variant: "destructive"
+      })
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -164,32 +172,25 @@ export default function LoginPage() {
         router.push("/dashboard");
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Login Auth Error:", err);
       let message = "Invalid email or password.";
       const code = err?.code || 'unknown';
       
-      if (code === 'auth/invalid-credential' || code === 'auth/user-not-found') {
-        message = "Credentials rejected. Please check your details or create a new account.";
+      if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') {
+        message = "Credentials rejected. Please verify your email/password or sign in using 'Continue with Google'. Note: Ensure Email/Password provider is enabled in Firebase Console (Authentication > Sign-in method).";
       } else if (code === 'auth/too-many-requests') {
-        message = "Access temporarily restricted. Please try again later.";
+        message = "Access temporarily restricted due to multiple failed attempts. Please try again later or use Google Sign-In.";
+      } else if (code === 'auth/operation-not-allowed') {
+        message = "Email/Password sign-in is currently disabled in your Firebase project. Please sign in with Google or enable Email/Password provider in Firebase Console.";
       }
 
       setError({ code, message });
       
-      // Specialized handling for v11 generic credential error
-      if (code === 'auth/invalid-credential') {
-        toast({
-          title: "Identity Verification Failed",
-          description: "The credentials provided do not match our records. Please verify your email/password or use Google Sign-In if you previously authorized via your Google account.",
-          variant: "destructive"
-        });
-      } else {
-        toast({
-          title: "Access Denied",
-          description: message,
-          variant: "destructive"
-        });
-      }
+      toast({
+        title: "Authentication Failed",
+        description: message,
+        variant: "destructive"
+      });
     } finally {
       setLoading(false)
     }

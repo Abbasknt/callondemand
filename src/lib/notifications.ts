@@ -1,36 +1,84 @@
 import { initializeApp, cert, getApps, App } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getMessaging } from 'firebase-admin/messaging';
+import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import { getMessaging, Messaging } from 'firebase-admin/messaging';
 import { Twilio } from 'twilio';
 
-// Initialize Firebase Admin if not already initialized
-let firebaseAdminApp: App;
-if (!getApps().length) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{}');
-    firebaseAdminApp = initializeApp({
-        credential: cert(serviceAccount)
-    });
-} else {
-    firebaseAdminApp = getApps()[0];
+// Lazy-initialized instances
+let firebaseAdminApp: App | null = null;
+let db: Firestore | null = null;
+let messaging: Messaging | null = null;
+let twilioClient: Twilio | null = null;
+
+function getFirebaseAdmin(): App {
+    if (!firebaseAdminApp) {
+        const apps = getApps();
+        if (apps.length) {
+            firebaseAdminApp = apps[0];
+        } else {
+            const key = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+            if (key) {
+                try {
+                    const serviceAccount = JSON.parse(key);
+                    firebaseAdminApp = initializeApp({
+                        credential: cert(serviceAccount)
+                    });
+                } catch (error) {
+                    console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY, using default credentials:', error);
+                    firebaseAdminApp = initializeApp();
+                }
+            } else {
+                firebaseAdminApp = initializeApp();
+            }
+        }
+    }
+    return firebaseAdminApp;
 }
 
-const db = getFirestore(firebaseAdminApp);
-const messaging = getMessaging(firebaseAdminApp);
-const twilioClient = new Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+function getDb(): Firestore {
+    if (!db) {
+        db = getFirestore(getFirebaseAdmin());
+    }
+    return db;
+}
+
+function getMessagingClient(): Messaging {
+    if (!messaging) {
+        messaging = getMessaging(getFirebaseAdmin());
+    }
+    return messaging;
+}
+
+function getTwilioClient(): Twilio {
+    if (!twilioClient) {
+        const sid = process.env.TWILIO_ACCOUNT_SID;
+        const token = process.env.TWILIO_AUTH_TOKEN;
+        if (!sid || !token) {
+            throw new Error('TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN is missing');
+        }
+        twilioClient = new Twilio(sid, token);
+    }
+    return twilioClient;
+}
 
 export async function sendInAppNotification(userId: string, title: string, body: string, type: string) {
-    await db.collection('users').doc(userId).collection('notifications').add({
-        title,
-        body,
-        type,
-        read: false,
-        createdAt: new Date()
-    });
+    try {
+        const firestoreDb = getDb();
+        await firestoreDb.collection('users').doc(userId).collection('notifications').add({
+            title,
+            body,
+            type,
+            read: false,
+            createdAt: new Date()
+        });
+    } catch (error) {
+        console.error('Error sending in-app notification:', error);
+    }
 }
 
 export async function sendPushNotification(fcmToken: string, title: string, body: string) {
     try {
-        await messaging.send({
+        const messagingClient = getMessagingClient();
+        await messagingClient.send({
             token: fcmToken,
             notification: { title, body }
         });
@@ -41,7 +89,8 @@ export async function sendPushNotification(fcmToken: string, title: string, body
 
 export async function sendSMS(to: string, body: string) {
     try {
-        await twilioClient.messages.create({
+        const client = getTwilioClient();
+        await client.messages.create({
             body,
             from: process.env.TWILIO_PHONE_NUMBER,
             to
@@ -50,3 +99,4 @@ export async function sendSMS(to: string, body: string) {
         console.error('Error sending SMS:', error);
     }
 }
+

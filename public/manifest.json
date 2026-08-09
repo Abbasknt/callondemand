@@ -1,21 +1,34 @@
 {
+  "id": "call-on-demand-hub-pwa",
   "name": "Call on Demand",
-  "short_name": "COD",
-  "description": "Unified Lifestyle Hub for Wallet, Food, and Logistics.",
+  "short_name": "COD Hub",
+  "description": "Unified Lifestyle Hub for Wallet, Food, Laundry, Logistics, and Services.",
   "start_url": "/dashboard",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#EAF2F6",
-  "theme_color": "#1D9FD6",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#F8FAFC",
+  "theme_color": "#2563EB",
+  "categories": ["lifestyle", "finance", "utilities"],
   "icons": [
+    {
+      "src": "https://picsum.photos/seed/cod-180/180/180",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "https://picsum.photos/seed/cod-192/192/192",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "https://picsum.photos/seed/cod-512/512/512",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

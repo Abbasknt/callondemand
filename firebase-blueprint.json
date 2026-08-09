@@ -19,7 +19,32 @@
         "referralCode": { "type": "string" },
         "bankName": { "type": "string" },
         "accountNumber": { "type": "string" },
-        "accountName": { "type": "string" }
+        "accountName": { "type": "string" },
+        "companyKyc": {
+          "type": "object",
+          "properties": {
+            "businessName": { "type": "string" },
+            "registrationType": { "type": "string" },
+            "rcNumber": { "type": "string" },
+            "tin": { "type": "string" },
+            "incorporationDate": { "type": "string" },
+            "sector": { "type": "string" },
+            "address": { "type": "string" },
+            "directorName": { "type": "string" },
+            "directorPosition": { "type": "string" },
+            "directorBvnNin": { "type": "string" },
+            "officialEmail": { "type": "string" },
+            "officialPhone": { "type": "string" },
+            "cacCertificateUrl": { "type": "string" },
+            "statusReportUrl": { "type": "string" },
+            "utilityBillUrl": { "type": "string" },
+            "directorIdUrl": { "type": "string" },
+            "status": { "type": "string" },
+            "submittedAt": { "type": "string" },
+            "verifiedAt": { "type": "string" },
+            "rejectionReason": { "type": "string" }
+          }
+        }
       },
       "required": ["id", "firstName", "lastName", "email", "phoneNumber", "role"]
     },

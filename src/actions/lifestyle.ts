@@ -10,3 +10,5 @@ import { lifestyleRecommender as internalRecommender, type LifestyleRecommenderI
 export async function getLifestyleRecommendation(input: LifestyleRecommenderInput): Promise<LifestyleRecommenderOutput> {
   return await internalRecommender(input);
 }
+
+export type { LifestyleRecommenderInput, LifestyleRecommenderOutput };

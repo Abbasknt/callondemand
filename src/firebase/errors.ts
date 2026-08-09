@@ -122,6 +122,10 @@ export function buildErrorInfo(error: unknown, operationType: OperationType, pat
  * and rethrows as a JSON string to satisfy platform requirements.
  */
 export function handleFirestoreError(error: any, operationType: OperationType, path: string | null) {
+  if (error?.code === 'unavailable' || error?.code === 'cancelled') {
+    console.warn(`Firestore network notice [${error.code}]: operating in offline/resilient mode.`);
+    return;
+  }
   const errorInfo = buildErrorInfo(error, operationType, path);
   
   // 1. Centralized logging (Simulating Sentry/LogRocket/Datadog)

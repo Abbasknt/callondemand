@@ -8,6 +8,7 @@ import { TrendingUp, Landmark, ShieldCheck, Loader2, Wallet, ArrowRight } from "
 import { useUser, useFirestore, useCollection, useDoc, useMemoFirebase } from "@/firebase"
 import { collection, query, where, doc } from "firebase/firestore"
 import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { WalletBalanceDisplay } from "@/components/wallet-balance-display"
 import { useToast } from "@/hooks/use-toast"
 
 /**
@@ -118,9 +119,7 @@ export default function InvestmentsPage() {
           </h2>
           <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest opacity-60">Verified Asset Management</p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-white border shadow-sm rounded-full text-primary font-black text-xs">
-          <Wallet className="h-3.5 w-3.5 opacity-40" /> ₦{(wallet?.balance || 0).toLocaleString()}
-        </div>
+        <WalletBalanceDisplay balance={wallet?.balance} badgeStyle className="bg-white border shadow-sm text-primary" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-2">

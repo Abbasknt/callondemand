@@ -1,5 +1,11 @@
 {
   "name": "Call on Demand Nigeria",
   "description": "The unified lifestyle ecosystem for speed and convenience across Nigeria.",
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

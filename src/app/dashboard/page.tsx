@@ -32,9 +32,9 @@ import Image from "next/image"
 import { useUser, useDoc, useFirestore, useMemoFirebase, useCollection, setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase"
 import { collection, doc, query, where, limit, orderBy } from "firebase/firestore"
 import { PromotionPopup } from "@/components/promotions/promotion-popup"
-import { getLifestyleRecommendation } from "@/actions/lifestyle"
-import type { LifestyleRecommenderOutput } from "@/ai/flows/lifestyle-recommender-flow"
+import { getLifestyleRecommendation, type LifestyleRecommenderOutput } from "@/actions/lifestyle"
 import { useToast } from "@/hooks/use-toast"
+import { useBalanceVisibility } from "@/hooks/use-balance-visibility"
 import { cn } from "@/lib/utils"
 import { PageTransition } from "@/components/page-transition"
 
@@ -52,7 +52,7 @@ export default function DashboardPage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const { toast } = useToast();
-  const [showBalance, setShowBalance] = useState(false);
+  const { showBalance, toggleShowBalance, formatBalance } = useBalanceVisibility(false);
   const [mounted, setMounted] = useState(false);
   
   // AI States & Refresh Logic
@@ -196,51 +196,52 @@ export default function DashboardPage() {
 
   return (
     <PageTransition>
-      <div className="space-y-5 pb-24 max-w-xl mx-auto px-2">
+      <div className="space-y-6 pb-24 max-w-4xl mx-auto px-4 sm:px-6">
         {popupPromo && <PromotionPopup campaign={popupPromo} />}
         
         {isProfileMissing && (
-          <div className="bg-primary/10 border-2 border-primary/20 rounded-[2rem] p-6 space-y-4 animate-in fade-in zoom-in duration-500">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-2xl bg-primary flex items-center justify-center text-white shadow-lg">
-                <ShieldCheck className="h-6 w-6" />
+          <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-5 space-y-3 animate-in fade-in zoom-in duration-500">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-amber-500 flex items-center justify-center text-white shadow-sm shrink-0">
+                <ShieldCheck className="h-5 w-5" />
               </div>
-              <div className="space-y-0.5">
-                <p className="text-[10px] font-black uppercase text-primary tracking-[0.2em]">Profile Sync Required</p>
-                <h3 className="text-xl font-black tracking-tight">Access Restricted</h3>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Profile Setup Needed</h3>
+                <p className="text-xs text-slate-600">Complete your profile setup to unlock your wallet, rewards, and order tracking.</p>
               </div>
             </div>
-            <p className="text-xs font-bold leading-relaxed text-muted-foreground">
-              Your identity nodes are not currently synchronized with the COD global ecosystem. Synchronize now to unlock full platform functionality.
-            </p>
-            <Button onClick={handleInitializeProfile} className="w-full h-12 rounded-xl font-black text-[10px] uppercase bg-primary text-white hover:bg-primary/90">
-              Synchronize Identity
+            <Button onClick={handleInitializeProfile} className="w-full sm:w-auto h-10 rounded-xl font-semibold text-xs bg-amber-600 hover:bg-amber-700 text-white px-5">
+              Complete Setup
             </Button>
           </div>
         )}
 
-        <div className="flex justify-between items-center px-1">
-          <div className="space-y-0.5">
-            <h2 className="text-xl md:text-2xl font-black tracking-tighter">
-              Hi, {user?.displayName?.split(' ')[0] || 'Partner'}
-            </h2>
-            <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest opacity-60">Nigeria Hub Live</p>
+        {/* Welcome Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Welcome back, {user?.displayName?.split(' ')[0] || 'Member'} 👋
+            </h1>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">What would you like to request today?</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button 
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Button 
+              variant="outline"
+              size="sm"
               onClick={handleRefresh} 
-              className="h-8 w-8 rounded-xl border-2 flex items-center justify-center text-muted-foreground hover:text-primary transition-all bg-white shadow-sm"
+              className="h-9 px-3 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-100 gap-1.5 text-xs font-medium"
               disabled={isSmartRecLoading}
             >
               <RefreshCw className={cn("h-3.5 w-3.5", isSmartRecLoading && "animate-spin")} />
-            </button>
+              Sync
+            </Button>
             {profile?.role && (
-              <Badge variant="outline" className={cn(
-                "uppercase font-black text-[8px] h-5",
-                profile.role === 'Admin' ? "border-red-600/30 text-red-600 bg-red-600/5" :
-                profile.role === 'Operator' ? "border-blue-600/30 text-blue-600 bg-blue-600/5" :
-                profile.role === 'Agent' ? "border-green-600/30 text-green-600 bg-green-600/5" :
-                "border-primary/20 text-primary bg-primary/5"
+              <Badge variant="secondary" className={cn(
+                "font-semibold text-xs px-2.5 py-1 rounded-lg border",
+                profile.role === 'Admin' ? "border-red-200 text-red-700 bg-red-50" :
+                profile.role === 'Operator' ? "border-blue-200 text-blue-700 bg-blue-50" :
+                profile.role === 'Agent' ? "border-emerald-200 text-emerald-700 bg-emerald-50" :
+                "border-slate-200 text-slate-700 bg-slate-100"
               )}>
                 {profile.role}
               </Badge>
@@ -249,123 +250,126 @@ export default function DashboardPage() {
         </div>
 
         {profile?.roleUpdateNotification && (
-          <div className="bg-yellow-500/10 border-2 border-yellow-500/20 rounded-[2rem] p-5 space-y-4 animate-in fade-in zoom-in duration-500 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-5"><ShieldCheck className="h-20 w-20" /></div>
+          <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-yellow-500 flex items-center justify-center text-white shadow-lg shadow-yellow-500/20">
+              <div className="h-9 w-9 rounded-xl bg-amber-500 flex items-center justify-center text-white shrink-0">
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase text-yellow-700 tracking-widest leading-none mb-1">Authorization Status Changed</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-bold opacity-50 uppercase">New Access:</span>
-                  <Badge className="bg-yellow-600 text-white border-none font-black text-[8px] uppercase">{profile.role}</Badge>
-                </div>
+                <p className="text-xs font-bold text-slate-900">Role Status Updated: {profile.role}</p>
+                <p className="text-xs text-slate-600 italic">&quot;{profile.roleUpdateNotification}&quot;</p>
               </div>
             </div>
-            <p className="text-xs font-bold leading-relaxed text-yellow-900/80 italic">
-              &quot;{profile.roleUpdateNotification}&quot;
-            </p>
-            <Button onClick={handleClearRoleNotif} variant="secondary" className="w-full h-10 rounded-xl font-black text-[9px] uppercase bg-yellow-500 text-white hover:bg-yellow-600 border-none">
-              Acknowledge New Status
+            <Button onClick={handleClearRoleNotif} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold shrink-0">
+              Acknowledge
             </Button>
           </div>
         )}
 
         {aiTip && (
-          <div className="bg-accent/5 border-2 border-dashed border-accent/20 rounded-2xl p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top duration-700">
-            <div className="h-8 w-8 rounded-xl bg-accent/10 flex items-center justify-center text-accent shrink-0">
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-3.5 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
               <BrainCircuit className="h-4 w-4" />
             </div>
-            <p className="text-[10px] font-bold text-accent-foreground leading-tight italic opacity-80">
-              &quot;{aiTip.trim()}&quot;
+            <p className="text-xs text-slate-700 font-medium leading-relaxed">
+              <span className="font-semibold text-primary">Smart Tip:</span> &quot;{aiTip.trim()}&quot;
             </p>
           </div>
         )}
 
         {announcements.map((ann) => (
-          <div key={ann.id} className="bg-primary/5 border-l-4 border-primary p-3 rounded-r-xl flex items-center gap-3 animate-in slide-in-from-left">
-            <BellRing className="h-4 w-4 text-primary shrink-0" />
+          <div key={ann.id} className="bg-blue-50 border border-blue-200/60 p-3.5 rounded-xl flex items-center gap-3">
+            <BellRing className="h-4.5 w-4.5 text-blue-600 shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-black tracking-tight truncate uppercase">{ann.title}</p>
-              <p className="text-[9px] text-muted-foreground font-medium line-clamp-1 truncate">{ann.description}</p>
+              <p className="text-xs font-bold text-slate-900 truncate">{ann.title}</p>
+              <p className="text-xs text-slate-600 line-clamp-1">{ann.description}</p>
             </div>
           </div>
         ))}
 
+        {/* Primary Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="bg-primary text-primary-foreground border-none shadow-xl rounded-[2rem] overflow-hidden relative group h-40">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform duration-700">
-              <Wallet className="h-20 w-20" />
+          <Card className="bg-primary text-primary-foreground border-none shadow-md rounded-2xl overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-105 transition-transform">
+              <Wallet className="h-24 w-24" />
             </div>
-            <CardHeader className="pb-1 p-6">
+            <CardHeader className="pb-1 p-5">
               <div className="flex items-center justify-between">
-                <div className="text-[8px] font-black uppercase tracking-[0.2em] opacity-80 flex items-center gap-2">
-                  Unified Wallet <ShieldCheck className="h-2.5 w-2.5" />
-                </div>
-                <button onClick={() => setShowBalance(!showBalance)} className="text-white opacity-60 hover:opacity-100">
-                  {showBalance ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                <span className="text-xs font-medium text-primary-foreground/80 flex items-center gap-1.5">
+                  Main Wallet Balance <ShieldCheck className="h-3.5 w-3.5" />
+                </span>
+                <button 
+                  onClick={toggleShowBalance} 
+                  className="text-primary-foreground/70 hover:text-white transition-colors p-1 rounded"
+                  title={showBalance ? "Hide balance" : "View balance"}
+                >
+                  {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </CardHeader>
-            <CardContent className="px-6">
-              <div className="text-2xl md:text-3xl font-black tracking-tighter mb-4">
-                {isWalletLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : showBalance ? `₦ ${(wallet?.balance || 0).toLocaleString()}` : `₦ ••••••••`}
+            <CardContent className="px-5 pb-5">
+              <div className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-4">
+                {isWalletLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : formatBalance(wallet?.balance)}
               </div>
               <div className="flex gap-2">
-                <Button asChild size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 border-none text-white font-black rounded-lg h-8 px-4 text-[8px] uppercase tracking-widest">
-                  <Link href="/wallet"><Plus className="mr-1.5 h-3 w-3" /> Deposit</Link>
+                <Button asChild size="sm" className="bg-white text-primary hover:bg-slate-100 font-semibold rounded-xl h-9 px-4 text-xs">
+                  <Link href="/wallet"><Plus className="mr-1.5 h-3.5 w-3.5" /> Deposit Funds</Link>
                 </Button>
-                <Button asChild size="sm" variant="outline" className="border-white/20 hover:bg-white/5 text-white font-black rounded-lg h-8 px-4 text-[8px] uppercase tracking-widest">
-                  <Link href="/services/utility"><Zap className="mr-1.5 h-3 w-3" /> Top-up</Link>
+                <Button asChild size="sm" variant="outline" className="border-white/30 text-white hover:bg-white/10 font-semibold rounded-xl h-9 px-4 text-xs">
+                  <Link href="/services/utility"><Zap className="mr-1.5 h-3.5 w-3.5" /> Quick Top-up</Link>
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-accent text-accent-foreground border-none shadow-xl rounded-[2rem] overflow-hidden relative group h-40">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform duration-700">
-              <Stars className="h-20 w-20" />
+          <Card className="bg-slate-900 text-white border-none shadow-md rounded-2xl overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-105 transition-transform">
+              <Sparkles className="h-24 w-24" />
             </div>
-            <CardHeader className="pb-1 p-6">
-              <div className="text-[8px] font-black uppercase tracking-[0.2em] opacity-80 flex items-center gap-2">
-                Demand Insight <Sparkles className="h-2.5 w-2.5" />
-              </div>
+            <CardHeader className="pb-1 p-5">
+              <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                AI Smart Recommendation <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              </span>
             </CardHeader>
-            <CardContent className="px-6">
+            <CardContent className="px-5 pb-5">
               {isSmartRecLoading ? (
-                <Loader2 className="h-6 w-6 animate-spin mt-2" />
+                <Loader2 className="h-6 w-6 animate-spin mt-2 text-slate-400" />
               ) : smartRec ? (
                 <>
-                  <div className="text-lg md:text-xl font-black tracking-tighter line-clamp-1 mb-1">{smartRec.headline}</div>
-                  <p className="text-[9px] font-medium opacity-80 line-clamp-2 leading-tight mb-3 max-w-[180px]">{smartRec.recommendation}</p>
-                  <Button asChild size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 border-none text-white font-black rounded-lg h-8 px-4 text-[8px] uppercase tracking-widest">
+                  <div className="text-base font-bold text-white mb-1 line-clamp-1">{smartRec.headline}</div>
+                  <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed mb-3">{smartRec.recommendation}</p>
+                  <Button asChild size="sm" className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl h-9 px-4 text-xs">
                     <Link href={LIFESTYLE_SERVICES.find(s => s.id === smartRec.suggestedService)?.href || '/dashboard'}>{smartRec.callToAction}</Link>
                   </Button>
                 </>
               ) : (
-                <div className="text-lg font-black tracking-tighter">Partner Member</div>
+                <>
+                  <div className="text-base font-bold text-white mb-1">Tailored for You</div>
+                  <p className="text-xs text-slate-300 mb-3">Recharge bills, order food, or dispatch packages instantly.</p>
+                  <Button asChild size="sm" className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl h-9 px-4 text-xs">
+                    <Link href="/services">Browse Services</Link>
+                  </Button>
+                </>
               )}
             </CardContent>
           </Card>
         </div>
 
-        <div className="space-y-3">
-          <h3 className="text-[9px] font-black flex items-center gap-2 uppercase tracking-widest text-muted-foreground/60 px-1">
-            <Sparkles className="h-3 w-3 text-accent" /> Lifestyle Hubs
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {recommendations.map((service) => (
+        {/* Essential Services Grid */}
+        <div className="space-y-3 pt-2">
+          <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider px-1">
+            Everyday Services
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {LIFESTYLE_SERVICES.map((service) => (
               <Link key={service.id} href={service.href} className="group">
-                <Card className="border-2 border-muted hover:border-accent transition-all rounded-2xl cursor-pointer bg-card overflow-hidden shadow-sm h-24 flex flex-col justify-center px-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-xl bg-accent/10 flex items-center justify-center text-accent group-hover:scale-110 transition-transform">
-                      <service.icon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-black text-[11px] truncate tracking-tight">{service.name}</p>
-                      <p className="text-[7px] text-muted-foreground uppercase font-bold tracking-widest">{service.desc}</p>
-                    </div>
+                <Card className="border border-slate-200/80 hover:border-primary/50 hover:shadow-xs transition-all rounded-xl cursor-pointer bg-white p-4 flex flex-col items-start gap-2.5">
+                  <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+                    <service.icon className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-xs text-slate-900 group-hover:text-primary transition-colors">{service.name}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{service.desc}</p>
                   </div>
                 </Card>
               </Link>
@@ -373,51 +377,43 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Nigeria Platform Insights - Scaling Up */}
-        <div className="space-y-4 pt-6">
+        {/* Platform Stats */}
+        <div className="space-y-3 pt-4">
            <div className="flex items-center justify-between px-1">
-             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary flex items-center gap-2">
-               <Globe className="h-4 w-4" /> Nigeria Platform Status
-             </h3>
-             <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest border-green-500/20 text-green-600 bg-green-500/5">
-                All Nodes Live
+             <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+               <Globe className="h-4 w-4 text-emerald-600" /> System Network Status
+             </h2>
+             <Badge variant="outline" className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border-emerald-200 px-2 py-0.5">
+                All Systems Operational
              </Badge>
            </div>
            
-           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Total Volume', value: '₦8.4B', trend: '+12%', color: 'text-primary' },
-                { label: 'Active Agents', value: '1,240', trend: '+45', color: 'text-accent' },
-                { label: 'Logistics Hubs', value: '18', trend: 'Nigeria', color: 'text-primary' },
-                { label: 'System Uptime', value: '99.9%', trend: 'Stable', color: 'text-green-600' }
+                { label: 'Active Volume', value: '₦8.4B', trend: '+12% month', color: 'text-slate-900' },
+                { label: 'Verified Dispatchers', value: '1,240+', trend: 'Lagos & Abuja', color: 'text-slate-900' },
+                { label: 'Logistics Hubs', value: '18 Hubs', trend: 'Nigeria wide', color: 'text-slate-900' },
+                { label: 'System Uptime', value: '99.9%', trend: 'Real-time', color: 'text-emerald-600' }
               ].map((stat, i) => (
-                <div key={i} className="bg-white border-2 border-muted hover:border-primary/20 transition-all rounded-2xl p-4 shadow-sm group">
-                  <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mb-1">{stat.label}</p>
-                  <div className={cn("text-lg font-black tracking-tighter truncate", stat.color)}>{stat.value}</div>
-                  <div className="text-[7px] font-bold opacity-50 mt-1 flex items-center gap-1">
-                    <TrendingUp className="h-2 w-2" /> {stat.trend}
-                  </div>
+                <div key={i} className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs">
+                  <p className="text-[11px] font-medium text-slate-500 mb-0.5">{stat.label}</p>
+                  <div className={cn("text-base font-extrabold tracking-tight", stat.color)}>{stat.value}</div>
+                  <div className="text-[10px] text-slate-400 mt-1 font-medium">{stat.trend}</div>
                 </div>
               ))}
            </div>
-
-           <Button asChild variant="outline" className="w-full h-12 rounded-2xl border-2 border-dashed border-primary/20 hover:border-primary/40 text-[9px] font-black uppercase tracking-widest text-primary gap-2 bg-primary/5">
-             <Link href="/services">
-               Explore COD Pro Features <Stars className="h-4 w-4" />
-             </Link>
-           </Button>
         </div>
 
         {bannerAd && (
-          <div className="relative h-32 md:h-44 rounded-[2.5rem] overflow-hidden shadow-lg group border-2 border-white mt-4">
-            <Image src={bannerAd.imageUrl || "https://picsum.photos/seed/promo/800/300"} alt="Ad" fill className="object-cover transition-transform duration-1000 group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/30 to-transparent flex items-center p-6">
-              <div className="max-w-[200px] space-y-1.5 text-white">
-                <Badge className="bg-accent text-white border-none uppercase tracking-widest text-[7px] font-black px-2 h-4 mb-1">Featured</Badge>
-                <h3 className="text-base md:text-xl font-black leading-tight tracking-tighter line-clamp-1">{bannerAd.title}</h3>
-                <p className="text-[8px] md:text-[10px] opacity-90 line-clamp-2 leading-relaxed font-medium">{bannerAd.description}</p>
-                <Button asChild size="sm" className="bg-primary hover:bg-primary/90 font-black rounded-lg h-7 px-4 text-[8px] uppercase tracking-widest mt-2">
-                  <Link href={bannerAd.type === 'Crowdfunding' ? '/crowdfunding' : '/dashboard'}>Explore <ArrowRight className="ml-1 h-2.5 w-2.5" /></Link>
+          <div className="relative h-36 sm:h-40 rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 group mt-4">
+            <Image src={bannerAd.imageUrl || "https://picsum.photos/seed/promo/800/300"} alt="Ad" fill className="object-cover transition-transform duration-700 group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/40 to-transparent flex items-center p-6">
+              <div className="max-w-[260px] space-y-1.5 text-white">
+                <Badge className="bg-emerald-500 text-white border-none text-[10px] font-bold px-2 py-0.5">Special Promo</Badge>
+                <h3 className="text-base sm:text-lg font-extrabold leading-tight line-clamp-1">{bannerAd.title}</h3>
+                <p className="text-xs opacity-90 line-clamp-2 leading-relaxed font-normal">{bannerAd.description}</p>
+                <Button asChild size="sm" className="bg-primary hover:bg-primary/90 font-semibold rounded-lg h-8 px-3 text-xs mt-1">
+                  <Link href={bannerAd.type === 'Crowdfunding' ? '/crowdfunding' : '/dashboard'}>Learn More <ArrowRight className="ml-1 h-3 w-3" /></Link>
                 </Button>
               </div>
             </div>

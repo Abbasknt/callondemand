@@ -29,7 +29,7 @@ export async function logAuditAction(action: AuditAction, details: Record<string
     await addDoc(collection(db, 'system_logs'), {
       action,
       performerId: user.uid,
-      performerEmail: user.email,
+      performerEmail: user.email || null,
       timestamp: serverTimestamp(),
       details,
     });

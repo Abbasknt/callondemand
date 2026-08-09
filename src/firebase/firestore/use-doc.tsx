@@ -55,6 +55,12 @@ export function useDoc<T = any>(
         setIsLoading(false);
       },
       async (serverError: FirestoreError) => {
+        if (serverError.code === 'unavailable' || serverError.code === 'cancelled') {
+          console.warn(`Firestore document snapshot offline notice [${serverError.code}]`);
+          setIsLoading(false);
+          return;
+        }
+
         try {
           handleFirestoreError(serverError, OperationType.GET, memoizedDocRef.path);
         } catch (e: any) {

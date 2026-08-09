@@ -100,15 +100,15 @@ export function AIConcierge() {
 
   return (
     <>
-      <div className="fixed bottom-24 right-6 z-[1000] hidden md:block">
+      <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-4 md:bottom-24 md:right-6 z-[1000]">
         <Button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "h-16 w-16 rounded-full shadow-2xl transition-all duration-500 group border-4 border-white",
+            "h-12 w-12 md:h-16 md:w-16 rounded-full shadow-2xl transition-all duration-300 group border-2 md:border-4 border-white min-h-[44px] min-w-[44px] active:scale-95",
             isOpen ? "bg-red-500 hover:bg-red-600 rotate-90" : "bg-primary hover:bg-primary/90"
           )}
         >
-          {isOpen ? <X className="h-8 w-8" /> : <Bot className="h-8 w-8 group-hover:scale-110 transition-transform" />}
+          {isOpen ? <X className="h-6 w-6 md:h-8 md:w-8" /> : <Bot className="h-6 w-6 md:h-8 md:w-8 group-hover:scale-110 transition-transform" />}
           {!isOpen && (
             <span className="absolute -top-1 -right-1 flex h-4 w-4">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
@@ -121,10 +121,10 @@ export function AIConcierge() {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.95, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed bottom-4 md:bottom-24 right-0 md:right-24 w-full md:w-[400px] h-[600px] bg-background border-4 border-primary/20 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.3)] z-[1001] rounded-[3rem] flex flex-col overflow-hidden m-4 md:m-0"
+            exit={{ opacity: 0, scale: 0.95, y: 30 }}
+            className="fixed inset-x-0 bottom-0 md:bottom-24 md:left-auto md:right-24 md:w-[400px] h-[85vh] md:h-[600px] bg-background border-t-2 md:border-2 border-primary/20 shadow-2xl z-[1001] rounded-t-[2.5rem] md:rounded-[3rem] flex flex-col overflow-hidden pb-safe"
           >
             {/* Header */}
             <div className="p-6 bg-primary text-primary-foreground flex items-center justify-between shrink-0">

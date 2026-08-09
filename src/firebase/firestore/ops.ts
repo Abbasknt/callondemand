@@ -14,6 +14,7 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../errors';
+import { sanitizeFirestoreData } from '../non-blocking-updates';
 
 /**
  * @fileOverview Hardened Firestore Operation Wrappers.
@@ -47,10 +48,11 @@ export async function setDocumentSafe<T = DocumentData>(
   options?: SetOptions
 ) {
   try {
+    const cleanData = sanitizeFirestoreData(data);
     if (options) {
-      return await setDoc(docRef, data, options);
+      return await setDoc(docRef, cleanData, options);
     }
-    return await setDoc(docRef, data as any);
+    return await setDoc(docRef, cleanData as any);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, docRef.path);
     throw error;
@@ -62,7 +64,8 @@ export async function addDocumentSafe<T = DocumentData>(
   data: T
 ) {
   try {
-    return await addDoc(colRef, data);
+    const cleanData = sanitizeFirestoreData(data);
+    return await addDoc(colRef, cleanData);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, colRef.path);
     throw error;
@@ -74,7 +77,8 @@ export async function updateDocumentSafe<T = DocumentData>(
   data: Partial<T>
 ) {
   try {
-    return await updateDoc(docRef, data as any);
+    const cleanData = sanitizeFirestoreData(data);
+    return await updateDoc(docRef, cleanData as any);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, docRef.path);
     throw error;

@@ -5,7 +5,6 @@ import React, { DependencyList, useContext, ReactNode, useMemo, useState, useEff
 import type { FirebaseApp } from 'firebase/app';
 import type { Firestore } from 'firebase/firestore';
 import { type Auth, type User, onAuthStateChanged } from 'firebase/auth';
-import type { VertexAI } from 'firebase/vertexai';
 import { FirebaseContext, type FirebaseContextState } from './context';
 import { FirebaseErrorListener } from '../components/FirebaseErrorListener';
 
@@ -14,7 +13,7 @@ interface FirebaseProviderProps {
   firebaseApp: FirebaseApp;
   firestore: Firestore;
   auth: Auth;
-  vertexAI: VertexAI;
+  vertexAI?: any;
 }
 
 /**
@@ -54,7 +53,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   }, [auth]);
 
   const contextValue = useMemo((): FirebaseContextState => {
-    const servicesAvailable = !!(firebaseApp && firestore && auth && vertexAI);
+    const servicesAvailable = !!(firebaseApp && firestore && auth);
     return {
       areServicesAvailable: servicesAvailable,
       firebaseApp: servicesAvailable ? firebaseApp : null,
@@ -77,17 +76,19 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 
 export const useFirebase = () => {
   const context = useContext(FirebaseContext);
-  if (context === undefined) throw new Error('useFirebase must be used within a FirebaseProvider.');
-  if (!context.areServicesAvailable) throw new Error('Firebase core services not available.');
-  return context as { 
-    firebaseApp: FirebaseApp, 
-    firestore: Firestore, 
-    auth: Auth, 
-    vertexAI: VertexAI, 
-    user: User | null, 
-    isUserLoading: boolean, 
-    userError: Error | null 
-  };
+  if (!context) {
+    return {
+      areServicesAvailable: false,
+      firebaseApp: null,
+      firestore: null,
+      auth: null,
+      vertexAI: null,
+      user: null,
+      isUserLoading: false,
+      userError: null,
+    };
+  }
+  return context;
 };
 
 export const useAuth = () => useFirebase().auth;
@@ -95,8 +96,12 @@ export const useFirestore = () => useFirebase().firestore;
 export const useFirebaseApp = () => useFirebase().firebaseApp;
 export const useFirebaseAI = () => useFirebase().vertexAI;
 export const useUser = () => {
-  const { user, isUserLoading, userError } = useFirebase();
-  return { user, isUserLoading, userError };
+  const context = useFirebase();
+  return { 
+    user: context.user ?? null, 
+    isUserLoading: context.isUserLoading ?? false, 
+    userError: context.userError ?? null 
+  };
 };
 
 /**
@@ -104,6 +109,7 @@ export const useUser = () => {
  * Prevents infinite re-render loops in real-time listeners.
  */
 export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T & {__memo?: boolean} {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const memoized = useMemo(factory, deps);
   if (typeof memoized !== 'object' || memoized === null) return memoized as any;
   (memoized as any).__memo = true;

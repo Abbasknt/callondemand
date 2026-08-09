@@ -22,7 +22,15 @@ import {
   Mail,
   Smartphone,
   KeyRound,
-  BellRing
+  BellRing,
+  Wallet,
+  Building2,
+  Briefcase,
+  FileCheck,
+  Upload,
+  Clock,
+  AlertCircle,
+  FileText
 } from "lucide-react"
 import { useUser, useFirestore, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
@@ -74,6 +82,8 @@ export default function SettingsPage() {
   const [twoFactorMethod, setTwoFactorMethod] = useState<'email' | 'sms'>('email')
   const [pushEnabled, setPushEnabled] = useState(true)
   const [emailEnabled, setEmailEnabled] = useState(true)
+  const [walletThresholdEnabled, setWalletThresholdEnabled] = useState(false)
+  const [walletThreshold, setWalletThreshold] = useState("1000")
   const [newPIN, setNewPIN] = useState("")
   const [confirmPIN, setConfirmPIN] = useState("")
   const [isUpdatingPIN, setIsUpdatingPIN] = useState(false)
@@ -82,6 +92,25 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default')
+
+  // Company KYC State
+  const [businessName, setBusinessName] = useState("CALL ON DEMAND.COM LTD")
+  const [registrationType, setRegistrationType] = useState("Limited Liability Company (RC)")
+  const [rcNumber, setRcNumber] = useState("")
+  const [tin, setTin] = useState("")
+  const [incorporationDate, setIncorporationDate] = useState("")
+  const [sector, setSector] = useState("E-Commerce, Agency & Multi-Services")
+  const [companyAddress, setCompanyAddress] = useState("C5 Ikon Allah Plaza Along MIS Wushishi, Western Bye-Pass Minna Niger State, Nigeria")
+  const [directorName, setDirectorName] = useState("")
+  const [directorPosition, setDirectorPosition] = useState("Managing Director")
+  const [directorBvnNin, setDirectorBvnNin] = useState("")
+  const [officialEmail, setOfficialEmail] = useState("altamambcs@callondemandbiz.com")
+  const [officialPhone, setOfficialPhone] = useState("")
+  const [cacCertificateUrl, setCacCertificateUrl] = useState("")
+  const [statusReportUrl, setStatusReportUrl] = useState("")
+  const [utilityBillUrl, setUtilityBillUrl] = useState("")
+  const [directorIdUrl, setDirectorIdUrl] = useState("")
+  const [isSavingCompanyKyc, setIsSavingCompanyKyc] = useState(false)
 
   useEffect(() => {
     const fetchBanks = async () => {
@@ -108,6 +137,27 @@ export default function SettingsPage() {
       setIsAccountVerified(!!profile.bankAccountVerified)
       setPushEnabled(profile.notificationPreferences?.push ?? true)
       setEmailEnabled(profile.notificationPreferences?.email ?? true)
+      setWalletThresholdEnabled(!!profile.walletThresholdEnabled)
+      setWalletThreshold(profile.walletThreshold !== undefined ? profile.walletThreshold.toString() : "1000")
+
+      if (profile.companyKyc) {
+        setBusinessName(profile.companyKyc.businessName || "CALL ON DEMAND.COM LTD")
+        setRegistrationType(profile.companyKyc.registrationType || "Limited Liability Company (RC)")
+        setRcNumber(profile.companyKyc.rcNumber || "")
+        setTin(profile.companyKyc.tin || "")
+        setIncorporationDate(profile.companyKyc.incorporationDate || "")
+        setSector(profile.companyKyc.sector || "E-Commerce, Agency & Multi-Services")
+        setCompanyAddress(profile.companyKyc.address || "C5 Ikon Allah Plaza Along MIS Wushishi, Western Bye-Pass Minna Niger State, Nigeria")
+        setDirectorName(profile.companyKyc.directorName || "")
+        setDirectorPosition(profile.companyKyc.directorPosition || "Managing Director")
+        setDirectorBvnNin(profile.companyKyc.directorBvnNin || "")
+        setOfficialEmail(profile.companyKyc.officialEmail || "altamambcs@callondemandbiz.com")
+        setOfficialPhone(profile.companyKyc.officialPhone || "")
+        setCacCertificateUrl(profile.companyKyc.cacCertificateUrl || "")
+        setStatusReportUrl(profile.companyKyc.statusReportUrl || "")
+        setUtilityBillUrl(profile.companyKyc.utilityBillUrl || "")
+        setDirectorIdUrl(profile.companyKyc.directorIdUrl || "")
+      }
     }
   }, [profile]);
 
@@ -253,6 +303,68 @@ export default function SettingsPage() {
     toast({ title: "Alerts Updated" });
   };
 
+  const handleWalletThresholdToggle = (val: boolean) => {
+    setWalletThresholdEnabled(val);
+    if (profileRef) {
+      updateDocumentNonBlocking(profileRef, { walletThresholdEnabled: val });
+      toast({ 
+        title: val ? "Balance Alerts Activated" : "Balance Alerts Deactivated",
+        description: val ? `You'll be alerted when your wallet balance goes below ₦${Number(walletThreshold).toLocaleString()}.` : "Wallet balance threshold alerts are now disabled."
+      });
+    }
+  };
+
+  const handleSaveWalletThreshold = () => {
+    if (!profileRef) return;
+    const thresholdNum = Number(walletThreshold);
+    if (isNaN(thresholdNum) || thresholdNum < 0) {
+      toast({ title: "Invalid Limit", description: "Threshold must be a valid positive number.", variant: "destructive" });
+      return;
+    }
+    updateDocumentNonBlocking(profileRef, { walletThreshold: thresholdNum });
+    toast({ 
+      title: "Threshold Updated", 
+      description: `You will be alerted if your wallet balance drops below ₦${thresholdNum.toLocaleString()}` 
+    });
+  };
+
+  const handleSaveCompanyKyc = () => {
+    if (!profileRef) return;
+    if (!businessName.trim() || !rcNumber.trim()) {
+      toast({ title: "Incomplete Corporate Records", description: "Business Legal Name and RC/BN Registration Number are required.", variant: "destructive" });
+      return;
+    }
+
+    setIsSavingCompanyKyc(true);
+    const companyKycData = {
+      businessName,
+      registrationType,
+      rcNumber,
+      tin,
+      incorporationDate,
+      sector,
+      address: companyAddress,
+      directorName,
+      directorPosition,
+      directorBvnNin,
+      officialEmail,
+      officialPhone,
+      cacCertificateUrl,
+      statusReportUrl,
+      utilityBillUrl,
+      directorIdUrl,
+      status: profile?.companyKyc?.status === 'Verified' ? 'Verified' : 'Pending',
+      submittedAt: new Date().toISOString()
+    };
+
+    updateDocumentNonBlocking(profileRef, { companyKyc: companyKycData });
+    toast({
+      title: "Company Verification Updated",
+      description: "Your corporate compliance filing has been submitted for review."
+    });
+    setIsSavingCompanyKyc(false);
+  };
+
   const handleSignOut = async () => {
     await signOut(auth!);
     router.push("/login");
@@ -267,13 +379,20 @@ export default function SettingsPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-2">
         <div className="space-y-1">
           <h2 className="text-2xl font-black tracking-tighter">Account Settings</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {twoFactorEnabled && <Badge className="bg-primary text-white border-none px-3 py-1 gap-1.5 uppercase font-black text-[10px]"><ShieldCheck className="h-3 w-3" /> 2FA Active</Badge>}
             {profile?.identityVerified ? (
               <Badge className="bg-green-100 text-green-700 border-green-200 px-3 py-1 gap-1.5 uppercase font-black text-[10px]"><CheckCircle2 className="h-3 w-3" /> Verified</Badge>
             ) : (
               <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 px-3 py-1 gap-1.5 uppercase font-black text-[10px]"><ShieldAlert className="h-3 w-3" /> Unverified</Badge>
             )}
+            {profile?.companyKyc?.status === 'Verified' ? (
+              <Badge className="bg-blue-100 text-blue-700 border-blue-200 px-3 py-1 gap-1.5 uppercase font-black text-[10px]"><Building2 className="h-3 w-3" /> Corporate Verified</Badge>
+            ) : profile?.companyKyc?.status === 'Pending' ? (
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 px-3 py-1 gap-1.5 uppercase font-black text-[10px]"><Clock className="h-3 w-3" /> Company KYC Review</Badge>
+            ) : profile?.companyKyc?.status === 'Rejected' ? (
+              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 px-3 py-1 gap-1.5 uppercase font-black text-[10px]"><AlertCircle className="h-3 w-3" /> Company KYC Action Needed</Badge>
+            ) : null}
           </div>
         </div>
       </div>
@@ -281,10 +400,11 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 gap-8 px-2">
         <Tabs defaultValue="profile" className="w-full">
           <TabsList className="mb-6 bg-muted/50 p-1 rounded-2xl h-12 flex-wrap h-auto gap-1 w-full overflow-x-auto no-scrollbar">
-            <TabsTrigger value="profile" className="flex-1 min-w-[100px] gap-2 rounded-xl h-10 font-bold"><User className="h-4 w-4" /> Personal</TabsTrigger>
-            <TabsTrigger value="payout" className="flex-1 min-w-[100px] gap-2 rounded-xl h-10 font-bold"><Landmark className="h-4 w-4" /> Payouts</TabsTrigger>
-            <TabsTrigger value="security" className="flex-1 min-w-[100px] gap-2 rounded-xl h-10 font-bold"><Lock className="h-4 w-4" /> Security</TabsTrigger>
-            <TabsTrigger value="notifications" className="flex-1 min-w-[100px] gap-2 rounded-xl h-10 font-bold"><Bell className="h-4 w-4" /> Alerts</TabsTrigger>
+            <TabsTrigger value="profile" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><User className="h-4 w-4" /> Personal</TabsTrigger>
+            <TabsTrigger value="company" className="flex-1 min-w-[120px] gap-2 rounded-xl h-10 font-bold"><Building2 className="h-4 w-4" /> Company KYC</TabsTrigger>
+            <TabsTrigger value="payout" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><Landmark className="h-4 w-4" /> Payouts</TabsTrigger>
+            <TabsTrigger value="security" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><Lock className="h-4 w-4" /> Security</TabsTrigger>
+            <TabsTrigger value="notifications" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><Bell className="h-4 w-4" /> Alerts</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="space-y-6">
@@ -299,6 +419,254 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Recipient ID (Phone)</label><Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl border-2 font-black tracking-widest" /></div>
                 <Button onClick={handleUpdateProfile} className="h-11 font-black px-10 rounded-xl bg-primary w-full sm:w-auto">Save Changes</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="company" className="space-y-6">
+            <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card">
+              <CardHeader className="bg-muted/30 p-6 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <CardTitle className="text-lg font-black uppercase tracking-tighter flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary" /> Corporate Identity & KYC
+                  </CardTitle>
+                  <CardDescription className="text-xs font-medium mt-1">
+                    Provide legal entity registration and tax details to unlock corporate partner features.
+                  </CardDescription>
+                </div>
+                {profile?.companyKyc?.status === 'Verified' && (
+                  <Badge className="bg-green-100 text-green-700 border-green-200 px-3 py-1.5 font-black uppercase text-[9px] gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Compliance Verified
+                  </Badge>
+                )}
+                {profile?.companyKyc?.status === 'Pending' && (
+                  <Badge className="bg-amber-100 text-amber-700 border-amber-200 px-3 py-1.5 font-black uppercase text-[9px] gap-1.5">
+                    <Clock className="h-3.5 w-3.5" /> Review Pending
+                  </Badge>
+                )}
+                {profile?.companyKyc?.status === 'Rejected' && (
+                  <Badge className="bg-red-100 text-red-700 border-red-200 px-3 py-1.5 font-black uppercase text-[9px] gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5" /> Action Required
+                  </Badge>
+                )}
+              </CardHeader>
+              <CardContent className="p-6 space-y-8">
+                {profile?.companyKyc?.status === 'Rejected' && profile?.companyKyc?.rejectionReason && (
+                  <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-black uppercase tracking-wider text-[10px] text-red-600">Compliance Officer Feedback</div>
+                      <p className="mt-1">{profile.companyKyc.rejectionReason}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 1: Business Information */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <Briefcase className="h-4 w-4" /> 1. Business Legal Entity
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Company / Business Name *</label>
+                      <Input 
+                        value={businessName} 
+                        onChange={(e) => setBusinessName(e.target.value)} 
+                        placeholder="e.g. Call On Demand Logistics Ltd" 
+                        className="h-11 rounded-xl border-2 font-bold text-xs" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Registration Structure *</label>
+                      <Select value={registrationType} onValueChange={setRegistrationType}>
+                        <SelectTrigger className="h-11 rounded-xl border-2 font-bold text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="Limited Liability Company (RC)" className="text-xs font-bold">Limited Liability Company (RC)</SelectItem>
+                          <SelectItem value="Business Name (BN)" className="text-xs font-bold">Business Name / Enterprise (BN)</SelectItem>
+                          <SelectItem value="Incorporated Trustee (IT)" className="text-xs font-bold">Incorporated Trustee (IT)</SelectItem>
+                          <SelectItem value="Sole Proprietorship" className="text-xs font-bold">Sole Proprietorship</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">RC / BN Number *</label>
+                      <Input 
+                        value={rcNumber} 
+                        onChange={(e) => setRcNumber(e.target.value)} 
+                        placeholder="e.g. RC-1928374" 
+                        className="h-11 rounded-xl border-2 font-black text-xs uppercase" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Tax ID Number (TIN)</label>
+                      <Input 
+                        value={tin} 
+                        onChange={(e) => setTin(e.target.value)} 
+                        placeholder="e.g. 29384756-0001" 
+                        className="h-11 rounded-xl border-2 font-black text-xs" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Incorporation Date</label>
+                      <Input 
+                        type="date" 
+                        value={incorporationDate} 
+                        onChange={(e) => setIncorporationDate(e.target.value)} 
+                        className="h-11 rounded-xl border-2 font-bold text-xs" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Industry Sector</label>
+                    <Select value={sector} onValueChange={setSector}>
+                      <SelectTrigger className="h-11 rounded-xl border-2 font-bold text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="E-Commerce, Agency & Multi-Services" className="text-xs font-bold">E-Commerce, Agency & Multi-Services (Mobile Food, Laundry, Logistics, Utility Bills, Airtime/Data)</SelectItem>
+                        <SelectItem value="Logistics & Freight" className="text-xs font-bold">Logistics & Freight</SelectItem>
+                        <SelectItem value="E-Commerce & Retail" className="text-xs font-bold">E-Commerce & Retail</SelectItem>
+                        <SelectItem value="Hospitality & Real Estate" className="text-xs font-bold">Hospitality & Real Estate</SelectItem>
+                        <SelectItem value="Financial Services" className="text-xs font-bold">Financial Services</SelectItem>
+                        <SelectItem value="General Commerce" className="text-xs font-bold">General Commerce</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Section 2: Contact & Address */}
+                <div className="space-y-4 pt-4 border-t">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <Building2 className="h-4 w-4" /> 2. Corporate Contact & Address
+                  </h4>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Registered Address</label>
+                    <Input 
+                      value={companyAddress} 
+                      onChange={(e) => setCompanyAddress(e.target.value)} 
+                      placeholder="Street, City, State" 
+                      className="h-11 rounded-xl border-2 font-bold text-xs" 
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Official Corporate Email</label>
+                      <Input 
+                        type="email" 
+                        value={officialEmail} 
+                        onChange={(e) => setOfficialEmail(e.target.value)} 
+                        placeholder="corporate@company.com" 
+                        className="h-11 rounded-xl border-2 font-bold text-xs" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Official Phone Number</label>
+                      <Input 
+                        value={officialPhone} 
+                        onChange={(e) => setOfficialPhone(e.target.value)} 
+                        placeholder="+234 800 000 0000" 
+                        className="h-11 rounded-xl border-2 font-bold text-xs" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Executive Director / Representative */}
+                <div className="space-y-4 pt-4 border-t">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <User className="h-4 w-4" /> 3. Principal Director / Representative
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Director Full Name</label>
+                      <Input 
+                        value={directorName} 
+                        onChange={(e) => setDirectorName(e.target.value)} 
+                        placeholder="Full Name" 
+                        className="h-11 rounded-xl border-2 font-bold text-xs" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Executive Title</label>
+                      <Input 
+                        value={directorPosition} 
+                        onChange={(e) => setDirectorPosition(e.target.value)} 
+                        placeholder="e.g. Managing Director" 
+                        className="h-11 rounded-xl border-2 font-bold text-xs" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Director BVN / NIN</label>
+                      <Input 
+                        value={directorBvnNin} 
+                        onChange={(e) => setDirectorBvnNin(e.target.value)} 
+                        placeholder="11-Digit Identity No." 
+                        maxLength={11}
+                        className="h-11 rounded-xl border-2 font-black text-xs tracking-widest" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: Compliance Verification Documents */}
+                <div className="space-y-4 pt-4 border-t">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <FileText className="h-4 w-4" /> 4. Corporate Records & Document Links
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">CAC Certificate URL / Document Link</label>
+                      <Input 
+                        value={cacCertificateUrl} 
+                        onChange={(e) => setCacCertificateUrl(e.target.value)} 
+                        placeholder="https://drive.google.com/..." 
+                        className="h-11 rounded-xl border-2 font-mono text-[11px]" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">CAC Status Report / Form CAC 1.1</label>
+                      <Input 
+                        value={statusReportUrl} 
+                        onChange={(e) => setStatusReportUrl(e.target.value)} 
+                        placeholder="https://drive.google.com/..." 
+                        className="h-11 rounded-xl border-2 font-mono text-[11px]" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Proof of Business Address (Utility Bill)</label>
+                      <Input 
+                        value={utilityBillUrl} 
+                        onChange={(e) => setUtilityBillUrl(e.target.value)} 
+                        placeholder="https://drive.google.com/..." 
+                        className="h-11 rounded-xl border-2 font-mono text-[11px]" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Director Government ID</label>
+                      <Input 
+                        value={directorIdUrl} 
+                        onChange={(e) => setDirectorIdUrl(e.target.value)} 
+                        placeholder="https://drive.google.com/..." 
+                        className="h-11 rounded-xl border-2 font-mono text-[11px]" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={handleSaveCompanyKyc} 
+                  disabled={isSavingCompanyKyc} 
+                  className="h-12 font-black px-10 rounded-xl bg-primary w-full sm:w-auto uppercase text-xs gap-2"
+                >
+                  {isSavingCompanyKyc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck className="h-4 w-4" />}
+                  Submit Company Verification
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -450,6 +818,39 @@ export default function SettingsPage() {
                   </div>
                   <Switch checked={emailEnabled} onCheckedChange={(val) => handleNotificationUpdate('email', val)} />
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card">
+              <CardHeader className="bg-primary/5 p-6 border-b flex flex-row items-center justify-between">
+                <CardTitle className="text-lg font-black flex items-center gap-2 text-primary uppercase tracking-tighter">
+                  <Wallet className="h-5 w-5 text-primary" /> Wallet Guard
+                </CardTitle>
+                <Switch checked={walletThresholdEnabled} onCheckedChange={handleWalletThresholdToggle} />
+              </CardHeader>
+              <CardContent className="p-6 space-y-4">
+                <p className="text-xs font-medium text-muted-foreground leading-relaxed">
+                  Set a minimum balance threshold. If your active wallet balance drops below this amount, we will alert you dynamically across the application.
+                </p>
+                {walletThresholdEnabled && (
+                  <div className="space-y-3 pt-2 animate-in fade-in-50 duration-200">
+                    <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Minimum Balance Threshold (₦)</label>
+                    <div className="flex gap-2">
+                      <Input 
+                        value={walletThreshold} 
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          setWalletThreshold(val);
+                        }} 
+                        placeholder="1000" 
+                        className="h-12 rounded-xl border-2 font-black text-lg tracking-widest flex-1" 
+                      />
+                      <Button onClick={handleSaveWalletThreshold} className="h-12 px-6 rounded-xl font-black bg-primary text-white hover:bg-primary/90">
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

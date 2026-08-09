@@ -17,18 +17,50 @@ import {
 import { errorEmitter } from './error-emitter';
 import { handleFirestoreError, OperationType } from './errors';
 
-export function setDocumentNonBlocking(docRef: DocumentReference, data: any, options: SetOptions) {
-  setDoc(docRef, data, options).catch(error => {
+function isPlainObject(obj: any): boolean {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const proto = Object.getPrototypeOf(obj);
+  return proto === null || proto === Object.prototype;
+}
+
+export function sanitizeFirestoreData<T>(data: T): T {
+  if (data === undefined) {
+    return null as unknown as T;
+  }
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeFirestoreData(item)) as unknown as T;
+  }
+  if (isPlainObject(data)) {
+    const sanitized: Record<string, any> = {};
+    for (const key of Object.keys(data as Record<string, any>)) {
+      const value = (data as Record<string, any>)[key];
+      if (value !== undefined) {
+        sanitized[key] = sanitizeFirestoreData(value);
+      }
+    }
+    return sanitized as T;
+  }
+  return data;
+}
+
+export function setDocumentNonBlocking(docRef: DocumentReference, data: any, options?: SetOptions) {
+  const cleanData = sanitizeFirestoreData(data);
+  const promise = options ? setDoc(docRef, cleanData, options) : setDoc(docRef, cleanData);
+  promise.catch(error => {
     try {
       handleFirestoreError(error, OperationType.WRITE, docRef.path);
     } catch (e: any) {
       errorEmitter.emit('permission-error', e);
     }
-  })
+  });
 }
 
 export function addDocumentNonBlocking(colRef: CollectionReference, data: any) {
-  const promise = addDoc(colRef, data)
+  const cleanData = sanitizeFirestoreData(data);
+  const promise = addDoc(colRef, cleanData)
     .catch(error => {
       try {
         handleFirestoreError(error, OperationType.CREATE, colRef.path);
@@ -40,7 +72,8 @@ export function addDocumentNonBlocking(colRef: CollectionReference, data: any) {
 }
 
 export function updateDocumentNonBlocking(docRef: DocumentReference, data: any) {
-  updateDoc(docRef, data)
+  const cleanData = sanitizeFirestoreData(data);
+  updateDoc(docRef, cleanData)
     .catch(error => {
       try {
         handleFirestoreError(error, OperationType.UPDATE, docRef.path);

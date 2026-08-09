@@ -22,6 +22,7 @@ import Image from "next/image"
 import { useUser, useFirestore, useCollection, useDoc, useMemoFirebase } from "@/firebase"
 import { collection, query, where, doc } from "firebase/firestore"
 import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { WalletBalanceDisplay } from "@/components/wallet-balance-display"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
@@ -154,9 +155,7 @@ export default function ShopPage() {
           <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest opacity-60">Verified Hub Goods</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full text-primary font-black text-xs border border-primary/20">
-            <Wallet className="h-3.5 w-3.5 opacity-40" /> ₦{(wallet?.balance || 0).toLocaleString()}
-          </div>
+          <WalletBalanceDisplay balance={wallet?.balance} badgeStyle />
           <Button variant="default" className="gap-2 bg-accent hover:bg-accent/90 relative h-10 px-5 rounded-lg" onClick={() => setIsCartOpen(true)}>
             <ShoppingBag className="h-4 w-4" />
             {cart.length > 0 && <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center bg-primary text-[10px] rounded-full border-2 border-background">{cart.reduce((s, i) => s + i.quantity, 0)}</Badge>}

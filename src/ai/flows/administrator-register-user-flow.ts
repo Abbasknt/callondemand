@@ -12,7 +12,7 @@ import {
   getDoc,
   serverTimestamp 
 } from 'firebase/firestore';
-import { db } from '@/firebase';
+import { db } from '@/firebase/server';
 
 const AdministratorRegisterUserInputSchema = z.object({
   adminId: z.string().describe('UID of the administrator initiating the request'),

@@ -5,6 +5,7 @@ import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Toaster } from "@/components/ui/toaster";
 import { ServiceWorkerRegistration } from '@/components/service-worker-registration';
 import { FirestoreMonitor } from '@/components/firestore-monitor';
+import { WalletBalanceGuard } from '@/components/wallet-balance-guard';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { cn } from '@/lib/utils';
 
@@ -13,6 +14,8 @@ const inter = Inter({
   display: 'swap',
   variable: '--font-inter',
 });
+
+// Root Layout
 
 export const metadata: Metadata = {
   title: 'Call on Demand.com | Unified Life, Seamlessly Demanded',
@@ -37,8 +40,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#1D9FD6',
+  themeColor: '#2563EB',
   viewportFit: 'cover',
+  interactiveWidget: 'resizes-visual',
 };
 
 export default function RootLayout({
@@ -47,18 +51,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("antialiased", inter.variable)}>
-      <head>
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Call on Demand" />
-      </head>
-      <body className="selection:bg-primary/20 bg-background overflow-x-hidden font-sans">
+    <html lang="en" className={cn("antialiased", inter.variable)} suppressHydrationWarning>
+      <body className="selection:bg-primary/20 bg-background overflow-x-hidden font-sans" suppressHydrationWarning>
         <ErrorBoundary>
           <FirebaseClientProvider>
             <FirestoreMonitor />
+            <WalletBalanceGuard />
             <ServiceWorkerRegistration />
             {children}
             <Toaster />

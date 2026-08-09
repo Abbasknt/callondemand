@@ -22,6 +22,7 @@ import Image from "next/image"
 import { useUser, useFirestore, useCollection, useDoc, useMemoFirebase } from "@/firebase"
 import { collection, query, where, doc, orderBy, limit } from "firebase/firestore"
 import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { WalletBalanceDisplay } from "@/components/wallet-balance-display"
 import { useToast } from "@/hooks/use-toast"
 import { format, addDays } from "date-fns"
 import { triggerReceiptPrint } from "@/lib/export-utils"
@@ -145,7 +146,7 @@ export default function ShortletPage() {
           <h2 className="text-3xl font-black tracking-tight flex items-center gap-3"><Home className="h-8 w-8 text-primary" /> Premium Shortlets</h2>
           <p className="text-muted-foreground">Verified luxury apartments for elite stays in Nigeria.</p>
         </div>
-        <div className="flex items-center gap-3 px-4 py-2 bg-primary/10 rounded-full text-primary font-bold border border-primary/20"><Wallet className="h-4 w-4" /> ₦{(wallet?.balance || 0).toLocaleString()}</div>
+        <WalletBalanceDisplay balance={wallet?.balance} badgeStyle />
       </div>
 
       <div className="flex flex-col md:flex-row items-center justify-between sticky top-4 z-10 bg-background/80 backdrop-blur-md p-4 rounded-[2rem] border shadow-sm gap-4 no-print">
