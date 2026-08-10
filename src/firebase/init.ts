@@ -39,12 +39,7 @@ export function initializeFirebase() {
     firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
   }
 
-  getDocFromServer(doc(firestore, 'test', 'connection')).catch((error) => {
-    if (error instanceof Error && error.message.includes('offline')) {
-      console.warn("Firestore client operating in offline mode.", error.message);
-    }
-  });
-
+  // Skip network connection tests during initialization to prevent hanging build processes and SSR promises
   const auth = getAuth(firebaseApp);
 
   return {

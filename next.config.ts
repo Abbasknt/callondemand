@@ -1,7 +1,6 @@
 import { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: "dist",
   allowedDevOrigins: ["*.run.app", "ais-dev-rck7pkkzbemjyebvsxpiib-197089124330.europe-west2.run.app", "localhost:3000", "127.0.0.1:3000"],
   reactStrictMode: true,
   productionBrowserSourceMaps: false,

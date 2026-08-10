@@ -14,6 +14,16 @@ export default function Error({
   useEffect(() => {
     if (error) {
       console.error(error)
+      if (
+        error.name === 'ChunkLoadError' ||
+        error.message?.includes('Loading chunk') ||
+        error.message?.includes('failed to fetch dynamically imported module')
+      ) {
+        if (typeof window !== 'undefined' && !sessionStorage.getItem('chunk_reload_error_page')) {
+          sessionStorage.setItem('chunk_reload_error_page', 'true')
+          window.location.reload()
+        }
+      }
     }
   }, [error])
 
