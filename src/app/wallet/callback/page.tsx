@@ -4,20 +4,21 @@ import { useEffect, useState, Suspense, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Loader2, CheckCircle2, XCircle, Wallet, Download } from "lucide-react"
+import { Loader2, CheckCircle2, XCircle, Wallet, Download, Clock, ShieldCheck } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { verifyTransaction } from "@/actions/monnify"
+import { submitFundingRequest } from "@/actions/wallet-funding"
 import { triggerReceiptPrint } from "@/lib/export-utils"
 import { BrandLogo } from "@/components/brand-logo"
-import { useUser, useFirestore, useMemoFirebase, getDocumentSafe } from "@/firebase"
-import { doc, collection, increment } from "firebase/firestore"
+import { useUser, useFirestore, useMemoFirebase } from "@/firebase"
+import { doc, collection } from "firebase/firestore"
 import { setDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 /**
  * @fileOverview Standardized Callback node for Monnify settlement.
- * Hardened to automatically credit the user wallet upon verification.
- * Implements idempotency protection via Session Storage.
+ * Hardened with institutional security: Monnify payment is verified and submitted
+ * for Admin Approval without automatic wallet crediting.
  */
 
 function CallbackContent() {
@@ -44,7 +45,7 @@ function CallbackContent() {
     async function checkAndProcessStatus() {
       if (!reference) {
         setStatus('failed')
-        setErrorMsg("No transaction reference found in handshake.")
+        setErrorMsg("No transaction reference found in gateway callback.")
         return
       }
 
@@ -55,35 +56,46 @@ function CallbackContent() {
           const settledAmount = result.response.amount || expectedAmount || 0;
           setTxData(result.response)
           
-          if (user && walletRef && !updateProcessed.current) {
-            const sessionKey = `processed_v2_${reference}`;
+          if (user && !updateProcessed.current) {
+            const sessionKey = `processed_v3_${reference}`;
             const hasBeenProcessed = sessionStorage.getItem(sessionKey);
             
             if (!hasBeenProcessed) {
               const isServicePayment = !!serviceName;
-              const txType = isServicePayment ? 'Payment' : 'Deposit';
-              const description = isServicePayment 
-                ? `Service Payment (${serviceName}) via Monnify`
-                : `Wallet Funding: ${result.response.paymentMethod || 'Monnify Direct'}`;
 
-              // If it's a deposit, increment balance; if it's direct service payment, log payment transaction
-              if (!isServicePayment) {
-                setDocumentNonBlocking(walletRef, { 
-                  balance: increment(settledAmount),
-                  lastDepositAt: new Date().toISOString()
-                }, { merge: true });
+              if (isServicePayment) {
+                // Direct service checkout record
+                if (walletRef) {
+                  addDocumentNonBlocking(collection(walletRef, 'transactions'), {
+                    type: 'Payment',
+                    amount: settledAmount,
+                    description: `Service Payment (${serviceName}) via Monnify`,
+                    transactionDate: new Date().toISOString(),
+                    status: 'Completed',
+                    reference: reference,
+                    paymentMethod: result.response.paymentMethod || 'Monnify',
+                    service: serviceName
+                  });
+                }
+              } else {
+                // Wallet Funding: Submit for Admin Approval (AUTO-CREDIT DISABLED)
+                await submitFundingRequest({
+                  userId: user.uid,
+                  userEmail: user.email || 'customer@call-on-demand.com',
+                  userName: user.displayName || 'COD User',
+                  amount: settledAmount,
+                  reference: reference,
+                  gatewayId: result.response.transactionReference || reference,
+                  paymentMethod: result.response.paymentMethod || 'Monnify Direct',
+                  contractCode: result.response.contractCode || '730430763017',
+                  merchantAccount: result.response.merchantAccount || '8065933172',
+                  amountPaid: result.response.amountPaid || settledAmount,
+                  settlementAmount: result.response.settlementAmount || settledAmount,
+                  paidOn: result.response.paidOn || new Date().toISOString(),
+                  gatewayVerified: true,
+                  gatewayStatus: 'PAID'
+                });
               }
-
-              addDocumentNonBlocking(collection(walletRef, 'transactions'), {
-                type: txType,
-                amount: settledAmount,
-                description: description,
-                transactionDate: new Date().toISOString(),
-                status: 'Completed',
-                reference: reference,
-                paymentMethod: result.response.paymentMethod || 'Monnify',
-                service: serviceName || 'Wallet'
-              });
 
               sessionStorage.setItem(sessionKey, 'true');
               updateProcessed.current = true;
@@ -97,7 +109,7 @@ function CallbackContent() {
       } catch (e) {
         console.error(e);
         setStatus('failed')
-        setErrorMsg("Handshake timeout. Please check your wallet hub in a moment.")
+        setErrorMsg("Monnify verification timeout. Please check your wallet hub in a moment.")
       }
     }
 
@@ -110,52 +122,69 @@ function CallbackContent() {
     <Card className="w-full max-w-md shadow-2xl border-none rounded-[3rem] overflow-hidden bg-white">
       <div className={cn(
         "h-2 transition-all duration-1000",
-        status === 'success' ? 'bg-green-500' : status === 'failed' ? 'bg-red-500' : 'bg-primary animate-pulse'
+        status === 'success' ? 'bg-amber-500' : status === 'failed' ? 'bg-red-500' : 'bg-primary animate-pulse'
       )} />
       
-      <CardHeader className="text-center pt-12">
-        <div className="flex justify-center mb-6">
+      <CardHeader className="text-center pt-10">
+        <div className="flex justify-center mb-5">
           <div className={cn(
-            "h-24 w-24 rounded-[2.5rem] flex items-center justify-center shadow-xl shadow-black/5",
-            status === 'success' ? "bg-green-100 text-green-600" : status === 'failed' ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary"
+            "h-20 w-20 rounded-[2rem] flex items-center justify-center shadow-xl shadow-black/5",
+            status === 'success' ? "bg-amber-100 text-amber-600" : status === 'failed' ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary"
           )}>
-            {status === 'loading' && <Loader2 className="h-12 w-12 animate-spin" />}
-            {status === 'success' && <CheckCircle2 className="h-12 w-12" />}
-            {status === 'failed' && <XCircle className="h-12 w-12" />}
+            {status === 'loading' && <Loader2 className="h-10 w-10 animate-spin" />}
+            {status === 'success' && <Clock className="h-10 w-10 animate-pulse" />}
+            {status === 'failed' && <XCircle className="h-10 w-10" />}
           </div>
         </div>
-        <CardTitle className="text-3xl font-black tracking-tighter uppercase">
-          {status === 'loading' ? 'Verifying' : status === 'success' ? 'Settled' : 'Failed'}
+        <CardTitle className="text-2xl font-black tracking-tighter uppercase">
+          {status === 'loading' ? 'Verifying Gateway' : status === 'success' ? 'Payment Verified' : 'Failed'}
         </CardTitle>
-        <CardDescription className="text-xs font-bold uppercase tracking-widest px-8 mt-2">
-          {status === 'loading' ? 'Synchronizing with production ledger...' : status === 'success' ? 'Wallet credited via digital handshake.' : errorMsg}
+        <CardDescription className="text-xs font-semibold px-6 mt-2 text-slate-600">
+          {status === 'loading' 
+            ? 'Synchronizing with Monnify production ledger...' 
+            : status === 'success' 
+            ? 'Monnify payment confirmed. Your deposit has been queued for Admin clearance and will credit your wallet upon approval.' 
+            : errorMsg}
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="px-10 pb-12 space-y-8">
+      <CardContent className="px-8 pb-10 space-y-6">
         {reference && (
-          <div className="bg-muted/30 p-8 rounded-[2rem] border-4 border-dashed text-left space-y-4">
-            <div className="flex justify-between items-center border-b border-black/5 pb-3">
-              <p className="text-[9px] font-black uppercase text-muted-foreground opacity-60">Handshake Ref</p>
-              <p className="font-mono font-bold text-[10px] uppercase">{reference.slice(0, 16)}...</p>
+          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 text-left space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-200/80 pb-2.5">
+              <p className="text-[10px] font-black uppercase text-slate-500">Gateway Reference</p>
+              <p className="font-mono font-bold text-xs uppercase text-slate-800">{reference.slice(0, 18)}...</p>
             </div>
             {txData && (
-              <div className="flex justify-between items-end">
-                <p className="text-[9px] font-black uppercase text-muted-foreground opacity-60">Value</p>
-                <p className="font-black text-2xl text-primary">₦{txData.amount?.toLocaleString()}</p>
+              <div className="flex justify-between items-end border-b border-slate-200/80 pb-2.5">
+                <p className="text-[10px] font-black uppercase text-slate-500">Amount Paid</p>
+                <p className="font-black text-xl text-primary">₦{txData.amount?.toLocaleString()}</p>
               </div>
             )}
+            <div className="flex justify-between items-center pt-1">
+              <p className="text-[10px] font-black uppercase text-slate-500">Approval Status</p>
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
+                <Clock className="h-3 w-3" /> Awaiting Admin Approval
+              </span>
+            </div>
           </div>
         )}
 
-        <div className="flex flex-col gap-3 pt-4">
+        <div className="bg-blue-50/80 border border-blue-200/60 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-blue-900">
+          <ShieldCheck className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+          <p className="leading-relaxed text-[11px]">
+            <strong>Security Notice:</strong> Auto-crediting is disabled by platform policy. All Monnify funding transactions are logged and reviewed by the Admin team to ensure ledger integrity.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2.5 pt-2">
           {status === 'success' && (
-            <Button variant="outline" size="lg" className="w-full h-14 text-sm font-black rounded-xl border-2 uppercase gap-2" onClick={() => triggerReceiptPrint()}>
-              <Download className="h-4 w-4" /> Thermal Receipt
+            <Button variant="outline" size="lg" className="w-full h-12 text-xs font-bold rounded-xl border gap-2" onClick={() => triggerReceiptPrint()}>
+              <Download className="h-4 w-4" /> Download Transaction Receipt
             </Button>
           )}
-          <Button asChild size="lg" className="w-full h-14 text-sm font-black rounded-xl shadow-xl bg-primary hover:bg-primary/90 uppercase">
-            <Link href="/wallet"><Wallet className="mr-2 h-5 w-5" /> Return to Hub</Link>
+          <Button asChild size="lg" className="w-full h-12 text-xs font-bold rounded-xl shadow-md bg-primary hover:bg-primary/90 uppercase">
+            <Link href="/wallet"><Wallet className="mr-2 h-4 w-4" /> Return to Wallet Hub</Link>
           </Button>
         </div>
       </CardContent>
@@ -172,3 +201,4 @@ export default function WalletCallbackPage() {
     </div>
   )
 }
+

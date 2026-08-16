@@ -1,7 +1,5 @@
 'use server';
 
-import { ai } from '../genkit';
-import { z } from 'genkit';
 import { 
   collection, 
   query, 
@@ -9,55 +7,40 @@ import {
   getDocs, 
   setDoc, 
   doc, 
-  getDoc,
-  serverTimestamp 
+  getDoc 
 } from 'firebase/firestore';
 import { db } from '@/firebase/server';
 
-const AdministratorRegisterUserInputSchema = z.object({
-  adminId: z.string().describe('UID of the administrator initiating the request'),
-  email: z.string().email().describe('Email address of the new user'),
-  firstName: z.string().describe('First name of the user'),
-  lastName: z.string().describe('Last name of the user'),
-  role: z.enum(['Customer', 'Agent', 'Operator', 'Admin']).describe('Role level for the platform'),
-  assignedUnit: z.string().describe('Name of the operational unit assigned to this user'),
-});
+export interface AdministratorRegisterUserInput {
+  adminId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: 'Customer' | 'Agent' | 'Operator' | 'Admin';
+  assignedUnit: string;
+}
 
-const AdministratorRegisterUserOutputSchema = z.object({
-  success: z.boolean(),
-  message: z.string(),
-  userId: z.string().optional(),
-});
-
-export type AdministratorRegisterUserInput = z.infer<typeof AdministratorRegisterUserInputSchema>;
-export type AdministratorRegisterUserOutput = z.infer<typeof AdministratorRegisterUserOutputSchema>;
+export interface AdministratorRegisterUserOutput {
+  success: boolean;
+  message: string;
+  userId?: string;
+}
 
 /**
- * @fileOverview Genkit Flow: Admin-Driven User Provisioning.
+ * @fileOverview Admin-Driven User Provisioning.
  * Allows valid administrators to pre-register users with specific roles and operational units.
  */
-
 export async function administratorRegisterUser(
   input: AdministratorRegisterUserInput
 ): Promise<AdministratorRegisterUserOutput> {
   try {
-    return await administratorRegisterUserFlow(input);
-  } catch (error) {
-    console.error("User Provisioning Error:", error);
-    return {
-      success: false,
-      message: "An internal synchronization error occurred. Please try again.",
-    };
-  }
-}
+    if (!input || !input.email || !input.adminId) {
+      return {
+        success: false,
+        message: "Invalid input: Admin ID and email are required."
+      };
+    }
 
-const administratorRegisterUserFlow = ai.defineFlow(
-  {
-    name: 'administratorRegisterUserFlow',
-    inputSchema: AdministratorRegisterUserInputSchema,
-    outputSchema: AdministratorRegisterUserOutputSchema,
-  },
-  async (input) => {
     // 1. Verify Admin Status (Server-side Enforcement)
     const adminDocRef = doc(db, 'super_admins', input.adminId);
     const adminSnap = await getDoc(adminDocRef);
@@ -70,7 +53,7 @@ const administratorRegisterUserFlow = ai.defineFlow(
     }
 
     // 2. Validate Operational Unit
-    if (input.assignedUnit !== 'General') {
+    if (input.assignedUnit && input.assignedUnit !== 'General') {
       const unitsRef = collection(db, 'operational_units');
       const unitQuery = query(unitsRef, where('name', '==', input.assignedUnit));
       const unitSnap = await getDocs(unitQuery);
@@ -100,10 +83,10 @@ const administratorRegisterUserFlow = ai.defineFlow(
 
     await setDoc(inviteRef, {
       email: input.email.toLowerCase(),
-      firstName: input.firstName,
-      lastName: input.lastName,
-      role: input.role,
-      assignedUnit: input.assignedUnit,
+      firstName: input.firstName || '',
+      lastName: input.lastName || '',
+      role: input.role || 'Customer',
+      assignedUnit: input.assignedUnit || 'General',
       status: 'Pending',
       provisionedAt: new Date().toISOString(),
       provisionedBy: input.adminId,
@@ -114,5 +97,12 @@ const administratorRegisterUserFlow = ai.defineFlow(
       success: true,
       message: `Access Node Synchronized: ${input.email} is now provisioned with ${input.role} permissions in unit ${input.assignedUnit}.`,
     };
+  } catch (error: any) {
+    console.error("User Provisioning Error:", error);
+    return {
+      success: false,
+      message: error?.message || "An internal synchronization error occurred. Please try again.",
+    };
   }
-);
+}
+

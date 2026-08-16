@@ -105,6 +105,8 @@ export default function ShortletPage() {
     
     addDocumentNonBlocking(collection(walletRef!, 'transactions'), { 
       type: 'Payment', 
+      category: 'shortlet',
+      serviceType: 'shortlet',
       amount: totalCost, 
       description: `Shortlet Stay: ${listing.name}`, 
       transactionDate: new Date().toISOString(), 

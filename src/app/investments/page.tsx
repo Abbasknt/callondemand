@@ -73,6 +73,8 @@ export default function InvestmentsPage() {
     addDocumentNonBlocking(txColRef, {
       walletId: 'default',
       type: 'Payment',
+      category: 'investment',
+      serviceType: 'investments',
       amount: plan.minAmount,
       description: `Growth Plan Stake: ${plan.name}`,
       transactionDate: new Date().toISOString(),

@@ -1,12 +1,18 @@
 "use client"
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react"
-import { Map as GoogleMap, AdvancedMarker, Pin, InfoWindow, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
+import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, InfoWindow, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { Truck, Navigation, MapPin, CheckCircle2, Clock, ShieldCheck, Route as RouteIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
+import { MockRouteMap } from "@/components/mock-route-map"
 
-// Coordinate dictionary for major Nigerian states & hubs
+const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_PLATFORM_KEY || '';
+const hasValidMapsKey = Boolean(GOOGLE_MAPS_KEY) && GOOGLE_MAPS_KEY !== 'YOUR_API_KEY';
+
+// Coordinate dictionary for major Nigerian states, hubs & municipal districts
 const NIGERIA_STATE_COORDS: Record<string, { lat: number; lng: number }> = {
+  // Major States
   "lagos": { lat: 6.5244, lng: 3.3792 },
   "abuja": { lat: 9.0765, lng: 7.3986 },
   "rivers": { lat: 4.8156, lng: 7.0498 },
@@ -71,7 +77,56 @@ const NIGERIA_STATE_COORDS: Record<string, { lat: number; lng: number }> = {
   "ekiti": { lat: 7.6211, lng: 5.2215 },
   "ado ekiti": { lat: 7.6211, lng: 5.2215 },
   "bayelsa": { lat: 4.9267, lng: 6.2676 },
-  "yenagoa": { lat: 4.9267, lng: 6.2676 }
+  "yenagoa": { lat: 4.9267, lng: 6.2676 },
+
+  // Lagos Municipal & Intra-State Districts
+  "ikeja": { lat: 6.6018, lng: 3.3515 },
+  "lekki": { lat: 6.4698, lng: 3.5852 },
+  "victoria island": { lat: 6.4281, lng: 3.4219 },
+  "ikoyi": { lat: 6.4549, lng: 3.4346 },
+  "yaba": { lat: 6.5095, lng: 3.3711 },
+  "surulere": { lat: 6.4969, lng: 3.3556 },
+  "ikorodu": { lat: 6.6194, lng: 3.5105 },
+  "festac": { lat: 6.4674, lng: 3.2842 },
+  "alaba": { lat: 6.4589, lng: 3.1950 },
+  "ajah": { lat: 6.4658, lng: 3.5684 },
+  "oshodi": { lat: 6.5385, lng: 3.3429 },
+  "maryland": { lat: 6.5744, lng: 3.3667 },
+  "epe": { lat: 6.5841, lng: 3.9834 },
+  "badagry": { lat: 6.4167, lng: 2.8833 },
+  "agege": { lat: 6.6180, lng: 3.3209 },
+
+  // Abuja (FCT) Municipal & Intra-State Districts
+  "central business district": { lat: 9.0579, lng: 7.4951 },
+  "cbd": { lat: 9.0579, lng: 7.4951 },
+  "maitama": { lat: 9.0882, lng: 7.4934 },
+  "wuse": { lat: 9.0667, lng: 7.4667 },
+  "garki": { lat: 9.0333, lng: 7.4833 },
+  "asokoro": { lat: 9.0435, lng: 7.5255 },
+  "jabi": { lat: 9.0747, lng: 7.4244 },
+  "utako": { lat: 9.0645, lng: 7.4397 },
+  "gwarinpa": { lat: 9.1122, lng: 7.3986 },
+  "kubwa": { lat: 9.1554, lng: 7.3372 },
+  "lugbe": { lat: 8.9774, lng: 7.3711 },
+  "apo": { lat: 9.0064, lng: 7.5029 },
+  "guzape": { lat: 9.0278, lng: 7.5278 },
+
+  // Rivers / Port Harcourt Intra-State Districts
+  "trans amadi": { lat: 4.8150, lng: 7.0310 },
+  "gra": { lat: 4.8180, lng: 7.0050 },
+  "diobu": { lat: 4.7920, lng: 7.0010 },
+  "rumuokoro": { lat: 4.8690, lng: 6.9850 },
+  "woji": { lat: 4.8214, lng: 7.0625 },
+  "eleme": { lat: 4.7892, lng: 7.1235 },
+  "choba": { lat: 4.8986, lng: 6.9118 },
+
+  // Oyo / Ibadan Intra-State Districts
+  "bodija": { lat: 7.4344, lng: 3.9056 },
+  "dugbe": { lat: 7.3878, lng: 3.8789 },
+  "ring road": { lat: 7.3603, lng: 3.8642 },
+  "iwo road": { lat: 7.4069, lng: 3.9392 },
+  "oluyole": { lat: 7.3481, lng: 3.8569 },
+  "jericho": { lat: 7.3912, lng: 3.8698 }
 };
 
 export function resolveCoordinates(
@@ -102,10 +157,15 @@ export function resolveCoordinates(
 interface RealMapProps {
   origin: string;
   destination: string;
-  status: string;
+  status?: string;
   originCoords?: { lat: number; lng: number } | null;
   destinationCoords?: { lat: number; lng: number } | null;
   consignmentId?: string;
+  height?: string;
+  className?: string;
+  showRouteSummary?: boolean;
+  showFooter?: boolean;
+  title?: string;
 }
 
 function RouteDisplay({ 
@@ -230,10 +290,15 @@ function RouteDisplay({
 export function RealMap({ 
   origin, 
   destination, 
-  status, 
+  status = 'Active Dispatch', 
   originCoords, 
   destinationCoords, 
-  consignmentId 
+  consignmentId,
+  height = '380px',
+  className,
+  showRouteSummary = true,
+  showFooter = true,
+  title,
 }: RealMapProps) {
   const [selectedMarker, setSelectedMarker] = useState<'origin' | 'destination' | 'courier' | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distanceText: string; durationText: string }>({
@@ -264,154 +329,171 @@ export function RealMap({
     setRouteInfo(info);
   }, []);
 
+  if (!hasValidMapsKey) {
+    return (
+      <MockRouteMap
+        origin={origin}
+        destination={destination}
+        status={status}
+        shipmentId={consignmentId}
+      />
+    );
+  }
+
   return (
-    <div className="relative w-full rounded-3xl overflow-hidden border-2 border-slate-200 shadow-lg bg-slate-950 group">
-      {/* Top Route Summary Bar */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 p-2.5 px-4 bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-2xl text-slate-100 shadow-xl">
-        <div className="flex items-center gap-2">
-          <RouteIcon className="h-4 w-4 text-blue-400 animate-pulse" />
-          <p className="text-[10px] font-black uppercase tracking-wider">
-            Corridor Route {consignmentId ? `#${consignmentId.slice(0, 8)}` : ''}
-          </p>
-        </div>
+    <APIProvider apiKey={GOOGLE_MAPS_KEY} version="weekly">
+      <div className={cn("relative w-full rounded-3xl overflow-hidden border-2 border-slate-200 shadow-lg bg-slate-950 group", className)}>
+        {/* Top Route Summary Bar */}
+        {showRouteSummary && (
+          <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 p-2.5 px-4 bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-2xl text-slate-100 shadow-xl">
+            <div className="flex items-center gap-2">
+              <RouteIcon className="h-4 w-4 text-blue-400 animate-pulse" />
+              <p className="text-[10px] font-black uppercase tracking-wider">
+                {title || (consignmentId ? `Corridor Route #${consignmentId.slice(0, 8)}` : 'Live Route Corridor')}
+              </p>
+            </div>
 
-        <div className="flex items-center gap-3 text-[10px] font-bold">
-          <div className="flex items-center gap-1 text-slate-300">
-            <Navigation className="h-3 w-3 text-emerald-400" />
-            <span>{routeInfo.distanceText}</span>
+            <div className="flex items-center gap-3 text-[10px] font-bold">
+              <div className="flex items-center gap-1 text-slate-300">
+                <Navigation className="h-3 w-3 text-emerald-400" />
+                <span>{routeInfo.distanceText}</span>
+              </div>
+              <span className="text-slate-600">|</span>
+              <div className="flex items-center gap-1 text-slate-300">
+                <Clock className="h-3 w-3 text-amber-400" />
+                <span>{routeInfo.durationText}</span>
+              </div>
+              <span className="text-slate-600">|</span>
+              <Badge variant="outline" className="text-[8px] font-black uppercase bg-blue-500/20 text-blue-300 border-blue-400/40">
+                {status}
+              </Badge>
+            </div>
           </div>
-          <span className="text-slate-600">|</span>
-          <div className="flex items-center gap-1 text-slate-300">
-            <Clock className="h-3 w-3 text-amber-400" />
-            <span>{routeInfo.durationText}</span>
-          </div>
-          <span className="text-slate-600">|</span>
-          <Badge variant="outline" className="text-[8px] font-black uppercase bg-blue-500/20 text-blue-300 border-blue-400/40">
-            {status || 'Active'}
-          </Badge>
-        </div>
-      </div>
+        )}
 
-      {/* Google Map Canvas */}
-      <div className="w-full h-[380px] sm:h-[420px]">
-        <GoogleMap
-          defaultCenter={originLatLng}
-          defaultZoom={6}
-          mapId="DEMO_MAP_ID"
-          internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-          style={{ width: '100%', height: '100%' }}
-          options={{
-            disableDefaultUI: false,
-            zoomControl: true,
-            mapTypeControl: false,
-            streetViewControl: false,
-            fullscreenControl: true,
-          }}
-        >
-          {/* Real-Time Route Polyline Computation */}
-          <RouteDisplay
-            originLatLng={originLatLng}
-            destinationLatLng={destLatLng}
-            onRouteInfo={handleRouteInfo}
-          />
-
-          {/* Origin Marker */}
-          <AdvancedMarker
-            position={originLatLng}
-            onClick={() => setSelectedMarker('origin')}
-            title={`Origin: ${origin}`}
+        {/* Google Map Canvas */}
+        <div style={{ height, width: '100%' }}>
+          <GoogleMap
+            defaultCenter={originLatLng}
+            defaultZoom={6}
+            mapId="DEMO_MAP_ID"
+            internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+            style={{ width: '100%', height: '100%' }}
+            options={{
+              disableDefaultUI: false,
+              zoomControl: true,
+              mapTypeControl: false,
+              streetViewControl: false,
+              fullscreenControl: true,
+            }}
           >
-            <Pin background="#10b981" glyphColor="#ffffff" borderColor="#047857" />
-          </AdvancedMarker>
+            {/* Real-Time Route Polyline Computation */}
+            <RouteDisplay
+              originLatLng={originLatLng}
+              destinationLatLng={destLatLng}
+              onRouteInfo={handleRouteInfo}
+            />
 
-          {selectedMarker === 'origin' && (
-            <InfoWindow
+            {/* Origin Marker */}
+            <AdvancedMarker
               position={originLatLng}
-              onCloseClick={() => setSelectedMarker(null)}
+              onClick={() => setSelectedMarker('origin')}
+              title={`Origin: ${origin}`}
             >
-              <div className="p-1 text-slate-900 font-sans space-y-1">
-                <div className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600">
-                  <MapPin className="h-3 w-3" /> Origin Node
-                </div>
-                <p className="text-xs font-bold leading-tight">{origin}</p>
-                <p className="text-[9px] text-slate-500 font-mono">
-                  {originLatLng.lat.toFixed(4)}, {originLatLng.lng.toFixed(4)}
-                </p>
-              </div>
-            </InfoWindow>
-          )}
+              <Pin background="#10b981" glyphColor="#ffffff" borderColor="#047857" />
+            </AdvancedMarker>
 
-          {/* Destination Marker */}
-          <AdvancedMarker
-            position={destLatLng}
-            onClick={() => setSelectedMarker('destination')}
-            title={`Destination: ${destination}`}
-          >
-            <Pin background="#2563eb" glyphColor="#ffffff" borderColor="#1d4ed8" />
-          </AdvancedMarker>
-
-          {selectedMarker === 'destination' && (
-            <InfoWindow
-              position={destLatLng}
-              onCloseClick={() => setSelectedMarker(null)}
-            >
-              <div className="p-1 text-slate-900 font-sans space-y-1">
-                <div className="flex items-center gap-1 text-[10px] font-black uppercase text-blue-600">
-                  <CheckCircle2 className="h-3 w-3" /> Target Endpoint
-                </div>
-                <p className="text-xs font-bold leading-tight">{destination}</p>
-                <p className="text-[9px] text-slate-500 font-mono">
-                  {destLatLng.lat.toFixed(4)}, {destLatLng.lng.toFixed(4)}
-                </p>
-              </div>
-            </InfoWindow>
-          )}
-
-          {/* Live Courier / Vehicle Marker */}
-          {courierLatLng && (
-            <>
-              <AdvancedMarker
-                position={courierLatLng}
-                onClick={() => setSelectedMarker('courier')}
-                title="Live Transit Vehicle"
+            {selectedMarker === 'origin' && (
+              <InfoWindow
+                position={originLatLng}
+                onCloseClick={() => setSelectedMarker(null)}
               >
-                <div className="relative flex items-center justify-center p-2 rounded-full bg-blue-600 text-white shadow-xl ring-4 ring-blue-400/50 animate-bounce">
-                  <Truck className="h-5 w-5" />
-                  <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-white animate-ping" />
-                </div>
-              </AdvancedMarker>
-
-              {selectedMarker === 'courier' && (
-                <InfoWindow
-                  position={courierLatLng}
-                  onCloseClick={() => setSelectedMarker(null)}
-                >
-                  <div className="p-1 text-slate-900 font-sans space-y-1">
-                    <div className="flex items-center gap-1 text-[10px] font-black uppercase text-amber-600">
-                      <Truck className="h-3 w-3" /> Active Vehicle Position
-                    </div>
-                    <p className="text-xs font-bold">{status}</p>
-                    <p className="text-[9px] text-slate-500">En route on state corridor</p>
+                <div className="p-1 text-slate-900 font-sans space-y-1">
+                  <div className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600">
+                    <MapPin className="h-3 w-3" /> Origin Node
                   </div>
-                </InfoWindow>
-              )}
-            </>
-          )}
-        </GoogleMap>
-      </div>
+                  <p className="text-xs font-bold leading-tight">{origin}</p>
+                  <p className="text-[9px] text-slate-500 font-mono">
+                    {originLatLng.lat.toFixed(4)}, {originLatLng.lng.toFixed(4)}
+                  </p>
+                </div>
+              </InfoWindow>
+            )}
 
-      {/* Bottom Corridor Footer */}
-      <div className="p-3 bg-slate-900 text-slate-300 border-t border-slate-800 flex justify-between items-center text-[10px] font-bold">
-        <div className="flex items-center gap-2 truncate">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="truncate">Origin: <strong className="text-white">{origin}</strong></span>
+            {/* Destination Marker */}
+            <AdvancedMarker
+              position={destLatLng}
+              onClick={() => setSelectedMarker('destination')}
+              title={`Destination: ${destination}`}
+            >
+              <Pin background="#2563eb" glyphColor="#ffffff" borderColor="#1d4ed8" />
+            </AdvancedMarker>
+
+            {selectedMarker === 'destination' && (
+              <InfoWindow
+                position={destLatLng}
+                onCloseClick={() => setSelectedMarker(null)}
+              >
+                <div className="p-1 text-slate-900 font-sans space-y-1">
+                  <div className="flex items-center gap-1 text-[10px] font-black uppercase text-blue-600">
+                    <CheckCircle2 className="h-3 w-3" /> Target Endpoint
+                  </div>
+                  <p className="text-xs font-bold leading-tight">{destination}</p>
+                  <p className="text-[9px] text-slate-500 font-mono">
+                    {destLatLng.lat.toFixed(4)}, {destLatLng.lng.toFixed(4)}
+                  </p>
+                </div>
+              </InfoWindow>
+            )}
+
+            {/* Live Courier / Vehicle Marker */}
+            {courierLatLng && (
+              <>
+                <AdvancedMarker
+                  position={courierLatLng}
+                  onClick={() => setSelectedMarker('courier')}
+                  title="Live Transit Vehicle"
+                >
+                  <div className="relative flex items-center justify-center p-2 rounded-full bg-blue-600 text-white shadow-xl ring-4 ring-blue-400/50 animate-bounce">
+                    <Truck className="h-5 w-5" />
+                    <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-white animate-ping" />
+                  </div>
+                </AdvancedMarker>
+
+                {selectedMarker === 'courier' && (
+                  <InfoWindow
+                    position={courierLatLng}
+                    onCloseClick={() => setSelectedMarker(null)}
+                  >
+                    <div className="p-1 text-slate-900 font-sans space-y-1">
+                      <div className="flex items-center gap-1 text-[10px] font-black uppercase text-amber-600">
+                        <Truck className="h-3 w-3" /> Active Vehicle Position
+                      </div>
+                      <p className="text-xs font-bold">{status}</p>
+                      <p className="text-[9px] text-slate-500">En route on state corridor</p>
+                    </div>
+                  </InfoWindow>
+                )}
+              </>
+            )}
+          </GoogleMap>
         </div>
-        <span className="text-slate-600">➔</span>
-        <div className="flex items-center gap-2 truncate text-right">
-          <span className="truncate">Destination: <strong className="text-white">{destination}</strong></span>
-          <span className="h-2 w-2 rounded-full bg-blue-500" />
-        </div>
+
+        {/* Bottom Corridor Footer */}
+        {showFooter && (
+          <div className="p-3 bg-slate-900 text-slate-300 border-t border-slate-800 flex justify-between items-center text-[10px] font-bold">
+            <div className="flex items-center gap-2 truncate">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="truncate">Origin: <strong className="text-white">{origin}</strong></span>
+            </div>
+            <span className="text-slate-600">➔</span>
+            <div className="flex items-center gap-2 truncate text-right">
+              <span className="truncate">Destination: <strong className="text-white">{destination}</strong></span>
+              <span className="h-2 w-2 rounded-full bg-blue-500" />
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </APIProvider>
   )
 }

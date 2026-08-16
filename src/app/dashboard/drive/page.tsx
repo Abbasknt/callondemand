@@ -18,7 +18,12 @@ export default function DrivePage() {
                 // Authorization: `Bearer ${token}`
             }
         });
-        const data = await response.json();
+        let data: any = { files: [] };
+        try {
+          data = await response.json();
+        } catch (parseErr) {
+          console.warn("Could not parse Drive API JSON response:", parseErr);
+        }
         setFiles(data.files || []);
     } catch (e) {
         console.error(e);

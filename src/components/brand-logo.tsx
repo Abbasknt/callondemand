@@ -29,6 +29,7 @@ export function BrandLogo({ className, iconOnly = false, light = false }: BrandL
 
   const logoUrl = appSettings?.logoUrl || "/logo.png";
   const appName = appSettings?.appName || "Call on Demand";
+  const logoTagline = appSettings?.logoTagline || "Lifestyle Services";
 
   return (
     <div className={cn("flex items-center gap-3 select-none group", className)}>
@@ -59,13 +60,13 @@ export function BrandLogo({ className, iconOnly = false, light = false }: BrandL
             "font-bold text-lg tracking-tight",
             light ? "text-white" : "text-slate-900"
           )}>
-            Call on <span className="text-primary font-extrabold">Demand</span>
+            {appName}
           </span>
           <span className={cn(
             "text-[10px] font-medium tracking-wider uppercase opacity-75",
             light ? "text-white/80" : "text-slate-500"
           )}>
-            Lifestyle Services
+            {logoTagline}
           </span>
         </div>
       )}

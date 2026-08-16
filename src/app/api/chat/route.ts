@@ -1,6 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 let aiClient: GoogleGenAI | null = null;
 
 function isInvalidKey(key?: string) {

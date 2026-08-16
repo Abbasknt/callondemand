@@ -94,21 +94,49 @@ export function MockRouteMap({ origin, destination, status = "Processing", shipm
   };
 
   const originCoords = useMemo(() => getCoordinates(parsedOrigin), [parsedOrigin]);
-  const destCoords = useMemo(() => getCoordinates(parsedDestination), [parsedDestination]);
+  const rawDestCoords = useMemo(() => getCoordinates(parsedDestination), [parsedDestination]);
+
+  // Check if this is an intra-state route
+  const isIntraState = useMemo(() => {
+    const o = parsedOrigin.toLowerCase().trim();
+    const d = parsedDestination.toLowerCase().trim();
+    return o === d || o.includes(d) || d.includes(o) || (origin.toLowerCase().includes(destination.toLowerCase()));
+  }, [parsedOrigin, parsedDestination, origin, destination]);
+
+  // Apply a local municipal offset if intra-state so the route displays a local corridor
+  const destCoords = useMemo(() => {
+    if (isIntraState) {
+      return {
+        x: Math.min(290, originCoords.x + 32),
+        y: Math.max(25, originCoords.y - 24)
+      };
+    }
+    return rawDestCoords;
+  }, [isIntraState, originCoords, rawDestCoords]);
 
   // Compute Bezier Curve Control Point
   const midX = (originCoords.x + destCoords.x) / 2;
-  const midY = Math.min(originCoords.y, destCoords.y) - 45; // arc upward
+  const midY = isIntraState 
+    ? Math.min(originCoords.y, destCoords.y) - 20
+    : Math.min(originCoords.y, destCoords.y) - 45; // arc upward
   const routePath = `M ${originCoords.x} ${originCoords.y} Q ${midX} ${midY} ${destCoords.x} ${destCoords.y}`;
 
-  // Generate realistic flight/road distance in km
+  // Generate realistic distance in km
   const calculatedDistance = useMemo(() => {
+    if (isIntraState) {
+      // Intra-state distance typically 15 - 45 km
+      let hash = 0;
+      for (let i = 0; i < (origin + destination).length; i++) {
+        hash = (origin + destination).charCodeAt(i) + ((hash << 5) - hash);
+      }
+      return 15 + Math.abs(hash % 30);
+    }
     const dx = originCoords.x - destCoords.x;
     const dy = originCoords.y - destCoords.y;
     const pixelDist = Math.sqrt(dx * dx + dy * dy);
-    // Scale factor: roughly 4km per pixel coordinate
+    // Scale factor: roughly 3.8km per pixel coordinate
     return Math.round(pixelDist * 3.8 + 120);
-  }, [originCoords, destCoords]);
+  }, [isIntraState, origin, destination, originCoords, destCoords]);
 
   // Status visual configurations
   const statusColors = useMemo(() => {
@@ -297,7 +325,7 @@ export function MockRouteMap({ origin, destination, status = "Processing", shipm
           <div className="space-y-0.5">
             <p className="text-[7px] font-black uppercase text-slate-500 tracking-wider">Service Corridor</p>
             <p className="text-[11px] font-black text-slate-200 tracking-tight">
-              {parsedOrigin === parsedDestination ? "INTRA-STATE" : "INTER-STATE"}
+              {isIntraState ? "INTRA-STATE (LOCAL)" : "INTER-STATE (TRANSIT)"}
             </p>
           </div>
 
@@ -306,7 +334,7 @@ export function MockRouteMap({ origin, destination, status = "Processing", shipm
           <div className="space-y-0.5 text-right">
             <p className="text-[7px] font-black uppercase text-slate-500 tracking-wider">CORRIDOR ETA</p>
             <p className="text-[11px] font-black text-blue-400 font-mono tracking-tighter uppercase">
-              {status.toLowerCase().includes("delivered") ? "ARRIVED" : "24-48 HRS"}
+              {status.toLowerCase().includes("delivered") ? "ARRIVED" : (isIntraState ? "4-8 HRS" : "24-48 HRS")}
             </p>
           </div>
         </div>

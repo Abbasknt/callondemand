@@ -19,6 +19,9 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/brand-logo";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { TransactionIcon, TransactionCategoryBadge } from "@/components/transaction-icon";
+import { getTransactionCategoryInfo } from "@/lib/transaction-utils";
+import { WalletBalanceDisplay } from "@/components/wallet-balance-display";
 
 export default function TransactionsPage() {
   const { user, isUserLoading } = useUser();
@@ -62,11 +65,13 @@ export default function TransactionsPage() {
   const filteredTransactions = (transactions || []).filter((tx) => {
     const matchesType = typeFilter === 'ALL' || tx.type === typeFilter;
     const searchLower = searchTerm.toLowerCase();
+    const info = getTransactionCategoryInfo(tx);
     const matchesSearch = !searchTerm || 
       (tx.description && tx.description.toLowerCase().includes(searchLower)) ||
       (tx.reference && tx.reference.toLowerCase().includes(searchLower)) ||
       (tx.id && tx.id.toLowerCase().includes(searchLower)) ||
-      (tx.amount && String(tx.amount).includes(searchLower));
+      (tx.amount && String(tx.amount).includes(searchLower)) ||
+      info.categoryName.toLowerCase().includes(searchLower);
     return matchesType && matchesSearch;
   });
 
@@ -197,7 +202,7 @@ export default function TransactionsPage() {
             <span className="text-[9px] font-black uppercase tracking-widest">Available Balance</span>
             <Wallet className="h-4 w-4 text-primary" />
           </div>
-          <p className="text-2xl font-black text-primary tracking-tight">₦{(wallet?.balance || 0).toLocaleString()}</p>
+          <WalletBalanceDisplay balance={wallet?.balance} className="text-2xl font-black text-primary tracking-tight" />
         </Card>
 
         <Card className="rounded-3xl border-none shadow-md bg-card p-5">
@@ -272,22 +277,12 @@ export default function TransactionsPage() {
                 return (
                   <div key={tx.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/20 transition-colors">
                     <div className="flex items-start sm:items-center gap-4 min-w-0">
-                      <div className={cn(
-                        "h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 shadow-inner",
-                        isDeposit ? "bg-emerald-500/10 text-emerald-600" : isWithdrawal ? "bg-amber-500/10 text-amber-600" : "bg-primary/10 text-primary"
-                      )}>
-                        {isDeposit ? <ArrowDownLeft className="h-5 w-5" /> : <ArrowUpRight className="h-5 w-5" />}
-                      </div>
+                      <TransactionIcon tx={tx} size="md" />
 
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <p className="text-xs font-black uppercase truncate">{tx.description || 'Transaction'}</p>
-                          <Badge variant="outline" className={cn(
-                            "text-[8px] font-black uppercase px-2 py-0 border-none",
-                            isDeposit ? "bg-emerald-500/10 text-emerald-600" : isWithdrawal ? "bg-amber-500/10 text-amber-600" : "bg-primary/10 text-primary"
-                          )}>
-                            {tx.type}
-                          </Badge>
+                          <TransactionCategoryBadge tx={tx} />
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-muted-foreground font-semibold uppercase">

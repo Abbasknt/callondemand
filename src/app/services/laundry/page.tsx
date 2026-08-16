@@ -244,7 +244,7 @@ export default function LaundryPage() {
                 {isCheckoutLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize Pickup"}
               </Button>
               <p className="text-[8px] font-black uppercase text-center text-muted-foreground opacity-60 flex items-center justify-center gap-2">
-                <Shield className="h-2 w-2" /> Handshake Secure via Monnify Wallet Protocol
+                <Shield className="h-2 w-2" /> Secured via Monnify Payment Gateway
               </p>
             </CardFooter>
           </Card>

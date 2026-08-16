@@ -175,5 +175,25 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow write: if isAdmin();
     }
+
+    // --- Monnify Wallet Funding Requests: Manual Admin Authorization Protocol ---
+    match /fundingRequests/{requestId} {
+      allow get: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && (
+        isAdmin() || 
+        (incoming().userId == request.auth.uid && incoming().status == 'Pending Approval')
+      );
+      // Only Admins can approve/reject/modify funding request records
+      allow update, delete: if isAdmin();
+    }
+
+    // --- Monnify VAS Data & Utility Orders ---
+    match /dataOrders/{orderId} {
+      allow get: if true;
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create, update: if isSignedIn() || isAdmin();
+      allow delete: if isAdmin();
+    }
   }
 }

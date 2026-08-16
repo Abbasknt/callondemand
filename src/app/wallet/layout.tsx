@@ -9,8 +9,8 @@ export default function WalletLayout({
   return (
     <div className="flex min-h-screen bg-background">
       <MainNav />
-      <main className="flex-1 p-4 md:p-8 pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-8">
-        <div className="max-w-4xl mx-auto">
+      <main className="flex-1 w-full min-w-0 p-3 sm:p-5 md:p-8 pt-[calc(4rem+env(safe-area-inset-top,0px))] sm:pt-20 md:pt-20 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-8">
+        <div className="w-full max-w-6xl mx-auto">
           {children}
         </div>
       </main>

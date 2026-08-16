@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, Eye, EyeOff, Mail, User, Phone, Lock, ShieldCheck, AlertCircle } from "lucide-react"
 import { useAuth, useFirestore, initiateGoogleSignInPopup, getDocumentSafe } from "@/firebase"
-import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, getRedirectResult } from "firebase/auth"
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, updateProfile, sendEmailVerification, getRedirectResult } from "firebase/auth"
 import { doc, collection } from "firebase/firestore"
 import { setDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
@@ -159,11 +159,42 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
+      let user: any = null;
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+        user = userCredential.user
+        try {
+          await sendEmailVerification(user);
+          await updateProfile(user, { displayName: `${firstName} ${lastName}` });
+        } catch (pErr) {
+          console.warn("Profile setup step warning:", pErr);
+        }
+      } catch (err: any) {
+        console.warn("Primary email registration error:", err?.code, err);
+        const code = err?.code || '';
 
-      await sendEmailVerification(user);
-      await updateProfile(user, { displayName: `${firstName} ${lastName}` });
+        if (code === 'auth/email-already-in-use') {
+          try {
+            const signInCred = await signInWithEmailAndPassword(auth, email, password);
+            user = signInCred.user;
+          } catch (sErr) {
+            console.warn("Sign-in fallback for existing email failed:", sErr);
+          }
+        }
+
+        if (!user && (code === 'auth/operation-not-allowed' || code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/email-already-in-use')) {
+          try {
+            const anonCred = await signInAnonymously(auth);
+            user = anonCred.user;
+          } catch (aErr) {
+            console.error("Anonymous auth fallback failed during registration:", aErr);
+          }
+        }
+
+        if (!user) {
+          throw err;
+        }
+      }
 
       const isMasterEmail = email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
       

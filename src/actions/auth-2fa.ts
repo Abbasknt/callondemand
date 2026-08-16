@@ -1,6 +1,6 @@
 "use server"
 
-import { db } from "@/firebase/server"
+import { getAdminDb } from "@/firebase/server"
 import { collection, addDoc, query, where, getDocs, orderBy, limit, deleteDoc, Timestamp } from "firebase/firestore"
 
 /**
@@ -19,6 +19,7 @@ interface SendOTPResult {
  */
 export async function sendTwoFactorCode(email: string, method: 'email' | 'sms'): Promise<SendOTPResult> {
   try {
+    const firestore = getAdminDb();
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiry = new Date();
     expiry.setMinutes(expiry.getMinutes() + 10); // 10 minute expiry
@@ -33,7 +34,7 @@ export async function sendTwoFactorCode(email: string, method: 'email' | 'sms'):
     };
 
     // Store in Firestore
-    await addDoc(collection(db, "otps"), otpData);
+    await addDoc(collection(firestore, "otps"), otpData);
 
     // LOG THE CODE for the user (simulating the "sent" message)
     console.log(`[SECURE HANDSHAKE] 2FA CODE FOR ${email}: ${code} (Method: ${method})`);
@@ -54,8 +55,9 @@ export async function sendTwoFactorCode(email: string, method: 'email' | 'sms'):
  */
 export async function verifyTwoFactorCode(email: string, code: string): Promise<{ success: boolean; message: string }> {
   try {
+    const firestore = getAdminDb();
     const q = query(
-      collection(db, "otps"),
+      collection(firestore, "otps"),
       where("email", "==", email.toLowerCase()),
       where("code", "==", code),
       where("used", "==", false),
@@ -85,3 +87,4 @@ export async function verifyTwoFactorCode(email: string, code: string): Promise<
     return { success: false, message: "Verification protocol failure." };
   }
 }
+

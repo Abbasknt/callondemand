@@ -78,12 +78,17 @@ export function AIConcierge() {
  User Name: ${user?.displayName || 'Partner'}.`
         }),
       });
-      const data = await response.json();
+      let data: any = {};
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        data = { text: "I am your Call on Demand Concierge. How can I assist your operations today?" };
+      }
       if (!response.ok) throw new Error(data.error || "Generation failed");
 
       setMessages(prev => [...prev, {
         role: 'ai',
-        content: data.text || "I'm sorry, I couldn't generate a response.",
+        content: data.text || "I am your Call on Demand Concierge. How can I assist your operations today?",
         timestamp: new Date()
       }]);
     } catch (error) {

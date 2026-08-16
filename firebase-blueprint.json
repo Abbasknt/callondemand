@@ -208,6 +208,53 @@
         "handshakeVerified": { "type": "boolean" }
       },
       "required": ["email", "firstName", "lastName", "role", "assignedUnit", "status"]
+    },
+    "FundingRequest": {
+      "title": "FundingRequest",
+      "description": "Monnify wallet funding deposit awaiting administrative approval.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "amount": { "type": "number" },
+        "reference": { "type": "string" },
+        "gatewayId": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending Approval", "Approved", "Rejected"] },
+        "gatewayStatus": { "type": "string" },
+        "gatewayVerified": { "type": "boolean" },
+        "paidOn": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "rejectedBy": { "type": "string" },
+        "rejectionReason": { "type": "string" }
+      },
+      "required": ["id", "userId", "amount", "reference", "status"]
+    },
+    "DataOrder": {
+      "title": "DataOrder",
+      "description": "Monnify VAS direct data bundle order and carrier fulfillment tracking.",
+      "type": "object",
+      "properties": {
+        "paymentReference": { "type": "string" },
+        "transactionReference": { "type": "string" },
+        "vendReference": { "type": "string" },
+        "network": { "type": "string" },
+        "billerCode": { "type": "string" },
+        "productCode": { "type": "string" },
+        "productName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "amount": { "type": "number" },
+        "userId": { "type": "string" },
+        "status": { "type": "string" },
+        "fulfilledAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["paymentReference", "network", "amount", "status"]
     }
   },
   "auth": {
@@ -245,6 +292,8 @@
     "/campaigns/{id}": { "schema": { "$ref": "#/backend/entities/ServiceNode" } },
     "/investmentPlans/{id}": { "schema": { "$ref": "#/backend/entities/InvestmentPlan" } },
     "/deliveryTasks/{taskId}": { "schema": { "$ref": "#/backend/entities/DeliveryTask" } },
-    "/invitations/{email}": { "schema": { "$ref": "#/backend/entities/Invitation" } }
+    "/invitations/{email}": { "schema": { "$ref": "#/backend/entities/Invitation" } },
+    "/fundingRequests/{requestId}": { "schema": { "$ref": "#/backend/entities/FundingRequest" } },
+    "/dataOrders/{orderId}": { "schema": { "$ref": "#/backend/entities/DataOrder" } }
   }
 }

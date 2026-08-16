@@ -19,10 +19,15 @@ import {
   Headphones
 } from "lucide-react"
 import { BrandLogo } from "@/components/brand-logo"
+import { MotionalAdsTicker } from "@/components/promotions/motional-ads-ticker"
+import { MotionalAdsBanner } from "@/components/promotions/motional-ads-banner"
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50/50 flex flex-col overflow-x-hidden text-slate-800">
+      {/* Motional Announcement Ticker */}
+      <MotionalAdsTicker />
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
@@ -109,6 +114,18 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Motional Featured Offers & Live Deals */}
+        <section className="py-8 max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">Active Motional Promotions</h2>
+            </div>
+            <span className="text-xs font-semibold text-primary">Live Cashback &amp; Deals</span>
+          </div>
+          <MotionalAdsBanner />
+        </section>
+
         {/* Services Showcase */}
         <section className="py-16 md:py-24 max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center max-w-2xl mx-auto mb-12">
@@ -116,63 +133,63 @@ export default function Home() {
             <p className="text-slate-600 text-sm sm:text-base mt-2">Simplify your everyday logistics, bills, food, and stays without switching apps.</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Link href="/services/utility" className="group p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
-              <div className="h-12 w-12 rounded-xl bg-blue-50 text-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Zap className="h-6 w-6" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            <Link href="/services/utility" className="group p-4.5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-blue-50 text-primary flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
+                <Zap className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Airtime & Bills Top-up</h3>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Airtime &amp; Bills Top-up</h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1.5 sm:mt-2 leading-relaxed">
                 Recharge MTN, Airtel, Glo, 9mobile, electricity tokens, cable TV, and internet bundles with instant receipt generation.
               </p>
             </Link>
 
-            <Link href="/logistics" className="group p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
-              <div className="h-12 w-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Truck className="h-6 w-6" />
+            <Link href="/logistics" className="group p-4.5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
+                <Truck className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Express Logistics & Delivery</h3>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Express Logistics &amp; Delivery</h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1.5 sm:mt-2 leading-relaxed">
                 Book intra-city dispatch riders or inter-state haulage with live map tracking and delivery verification.
               </p>
             </Link>
 
-            <Link href="/services/food" className="group p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
-              <div className="h-12 w-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Utensils className="h-6 w-6" />
+            <Link href="/services/food" className="group p-4.5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
+                <Utensils className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Food & Kitchens</h3>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Food &amp; Kitchens</h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1.5 sm:mt-2 leading-relaxed">
                 Order freshly prepared meals, local delicacies, and executive catering directly to your home or office.
               </p>
             </Link>
 
-            <Link href="/services/laundry" className="group p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
-              <div className="h-12 w-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Shirt className="h-6 w-6" />
+            <Link href="/services/laundry" className="group p-4.5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
+                <Shirt className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Laundry & Fabric Care</h3>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Laundry &amp; Fabric Care</h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1.5 sm:mt-2 leading-relaxed">
                 Schedule door-to-door garment pickup, dry cleaning, pressing, and express same-day return delivery.
               </p>
             </Link>
 
-            <Link href="/services/shortlet" className="group p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
-              <div className="h-12 w-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <HomeIcon className="h-6 w-6" />
+            <Link href="/services/shortlet" className="group p-4.5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
+                <HomeIcon className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Verified Shortlet Stays</h3>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Verified Shortlet Stays</h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1.5 sm:mt-2 leading-relaxed">
                 Book fully serviced apartments, luxury vacation rentals, and corporate suites with 24/7 power and security.
               </p>
             </Link>
 
-            <Link href="/services/shop" className="group p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
-              <div className="h-12 w-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <ShoppingBag className="h-6 w-6" />
+            <Link href="/services/shop" className="group p-4.5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-primary/40 transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
+                <ShoppingBag className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Essentials Marketplace</h3>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">Essentials Marketplace</h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1.5 sm:mt-2 leading-relaxed">
                 Shop curated groceries, office supplies, electronics, and daily essentials delivered right to your doorstep.
               </p>
             </Link>
@@ -192,7 +209,7 @@ export default function Home() {
                 <div className="h-10 w-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center mb-4">
                   <Lock className="h-5 w-5" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2">Secure Unified Wallet</h3>
+                <h3 className="text-lg font-bold text-white mb-2">Secure COD Wallet</h3>
                 <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
                   Fund easily via virtual bank account transfer, USSD, or debit card. Protected by bank-grade security protocols.
                 </p>

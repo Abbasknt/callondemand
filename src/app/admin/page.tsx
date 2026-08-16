@@ -65,17 +65,35 @@ import {
   Check,
   Briefcase,
   User,
-  Zap
+  Zap,
+  Palette,
+  Megaphone,
+  Gift,
+  Sparkles,
+  Tag,
+  Image as ImageIcon,
+  Link as LinkIcon,
+  DollarSign,
+  CheckCircle,
+  Edit,
+  Award,
+  Star,
+  Percent,
+  Eye,
+  Send
 } from "lucide-react"
+import { BrandLogo } from "@/components/brand-logo"
 import { useToast } from "@/hooks/use-toast"
 import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { doc, collection, query, limit, orderBy } from "firebase/firestore"
 import { setDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
-import { getMerchantBalance, getMerchantTransactions, resetMonnifyActions, checkGatewayHealth, saveMonnifyCredentials, testMonnifyCredentials } from "@/actions/monnify"
+import { getMerchantBalance, getMerchantTransactions, resetMonnifyActions, checkGatewayHealth, saveMonnifyCredentials, testMonnifyCredentials, verifyTransaction } from "@/actions/monnify"
+import { approveFundingRequest, rejectFundingRequest, manualCreditUserWallet, verifyMonnifyGatewayMatch, type FundingRequestItem } from "@/actions/wallet-funding"
 import { exportToCsv } from "@/lib/export-utils"
 import { cn } from "@/lib/utils"
 import { registerUserByAdmin } from "@/actions/admin-user"
 import { logAuditAction, AuditAction } from "@/lib/audit"
+import { XCircle, Ban, Wallet as WalletIcon } from "lucide-react"
 
 const MASTER_ADMIN_EMAILS = ['altamambcs@callondemandbiz.com', 'tatatradeandinnovation@gmail.com', 'altamam02@gmail.com'];
 
@@ -108,11 +126,14 @@ export default function SuperAdminPage() {
   const [isFinLoading, setIsFinLoading] = useState(false)
 
   // Monnify Gateway Credentials Management State
-  const [monnifyApiKey, setMonnifyApiKey] = useState("")
-  const [monnifySecretKey, setMonnifySecretKey] = useState("")
-  const [monnifyContractCode, setMonnifyContractCode] = useState("")
-  const [monnifyWalletAccount, setMonnifyWalletAccount] = useState("")
-  const [monnifyBaseUrl, setMonnifyBaseUrl] = useState("")
+  const [monnifyApiKey, setMonnifyApiKey] = useState("MK_PROD_TQSBYZCPHN")
+  const [monnifySecretKey, setMonnifySecretKey] = useState("ZTNLZ9KYFAYKK6DU95D107E7NQKHVMGQ")
+  const [monnifyContractCode, setMonnifyContractCode] = useState("730430763017")
+  const [monnifyWalletAccount, setMonnifyWalletAccount] = useState("8065933172")
+  const [monnifyBaseUrl, setMonnifyBaseUrl] = useState("https://api.monnify.com")
+  const [monnifyPaymentMethods, setMonnifyPaymentMethods] = useState<string[]>([
+    "CARD", "USSD", "DIRECT_DEBIT", "ACCOUNT_TRANSFER", "CASH", "PHONE_NUMBER"
+  ])
   const [isTestingCredentials, setIsTestingCredentials] = useState(false)
   const [isSavingCredentials, setIsSavingCredentials] = useState(false)
   const [credentialTestResult, setCredentialTestResult] = useState<{ success: boolean; message: string; details?: any } | null>(null)
@@ -141,11 +162,86 @@ export default function SuperAdminPage() {
     assignedUnit: "General"
   })
 
+  // Branding Management State
+  const [appNameInput, setAppNameInput] = useState("Call on Demand")
+  const [logoTaglineInput, setLogoTaglineInput] = useState("Lifestyle Services")
+  const [logoUrlInput, setLogoUrlInput] = useState("/logo.png")
+  const [isSavingBranding, setIsSavingBranding] = useState(false)
+
+  // Adverts & Campaigns Management State
+  const [isAdvertSheetOpen, setIsAdvertSheetOpen] = useState(false)
+  const [editingAdvert, setEditingAdvert] = useState<any>(null)
+  const [advertTitle, setAdvertTitle] = useState("")
+  const [advertDescription, setAdvertDescription] = useState("")
+  const [advertType, setAdvertType] = useState<"Ad" | "Promo" | "Notification" | "Banner">("Ad")
+  const [advertImageUrl, setAdvertImageUrl] = useState("https://picsum.photos/seed/promo/600/400")
+  const [advertTargetUrl, setAdvertTargetUrl] = useState("/services")
+  const [advertPromoCode, setAdvertPromoCode] = useState("")
+  const [advertStatus, setAdvertStatus] = useState<"Active" | "Paused" | "Completed">("Active")
+  const [isSavingAdvert, setIsSavingAdvert] = useState(false)
+
+  // Rewards & Quests Management State
+  const [referralBonusInput, setReferralBonusInput] = useState(500)
+  const [welcomeBonusInput, setWelcomeBonusInput] = useState(200)
+  const [goldTierThresholdInput, setGoldTierThresholdInput] = useState(1000)
+  const [dailyPointsInput, setDailyPointsInput] = useState(20)
+  const [isSavingRewardsSettings, setIsSavingRewardsSettings] = useState(false)
+
+  const [questTitleInput, setQuestTitleInput] = useState("")
+  const [questRewardInput, setQuestRewardInput] = useState("")
+  const [isSavingQuest, setIsSavingQuest] = useState(false)
+
+  // Direct User Reward Allocation State
+  const [rewardTargetUserId, setRewardTargetUserId] = useState("")
+  const [grantBonusAmount, setGrantBonusAmount] = useState(0)
+  const [grantLoyaltyPoints, setGrantLoyaltyPoints] = useState(0)
+  const [grantReason, setGrantReason] = useState("")
+  const [isGrantingReward, setIsGrantingReward] = useState(false)
+
+  // Wallet Funding Clearance & Approval State
+  const [fundingStatusFilter, setFundingStatusFilter] = useState<string>("Pending Approval")
+  const [fundingSearch, setFundingSearch] = useState("")
+  const [selectedFundingRequest, setSelectedFundingRequest] = useState<any>(null)
+  const [approvalNote, setApprovalNote] = useState("")
+  const [rejectionReasonInput, setRejectionReasonInput] = useState("")
+  const [isApprovingFunding, setIsApprovingFunding] = useState(false)
+  const [isRejectingFunding, setIsRejectingFunding] = useState(false)
+  const [isVerifyingMonnifyRef, setIsVerifyingMonnifyRef] = useState(false)
+  const [monnifyVerifyData, setMonnifyVerifyData] = useState<any>(null)
+  const [monnifyMatchReport, setMonnifyMatchReport] = useState<any>(null)
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
+  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false)
+
+  // Manual Credit Modal State
+  const [isManualCreditOpen, setIsManualCreditOpen] = useState(false)
+  const [manualCreditUserId, setManualCreditUserId] = useState("")
+  const [manualCreditAmount, setManualCreditAmount] = useState("")
+  const [manualCreditReason, setManualCreditReason] = useState("")
+  const [isProcessingManualCredit, setIsProcessingManualCredit] = useState(false)
+
+  const campaignsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'campaigns'), orderBy('createdAt', 'desc'));
+  }, [firestore]);
+  const { data: campaignsList } = useCollection(campaignsQuery);
+
+  const questsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'reward_quests'), orderBy('createdAt', 'desc'));
+  }, [firestore]);
+  const { data: rewardQuestsList } = useCollection(questsQuery);
+
   const auditLogsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'system_logs'), orderBy('timestamp', 'desc'), limit(100));
   }, [firestore]);
   const { data: auditLogs } = useCollection(auditLogsQuery);
+
+  const fundingRequestsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'fundingRequests'), orderBy('createdAt', 'desc'), limit(200));
+  }, [firestore]);
+  const { data: fundingRequestsList, isLoading: isFundingLoading } = useCollection(fundingRequestsQuery);
   
   const fetchSystemFinancials = useCallback(async () => {
     setIsFinLoading(true);
@@ -211,11 +307,21 @@ export default function SuperAdminPage() {
 
   useEffect(() => {
     if (appSettings) {
-      if (appSettings.monnifyApiKey) setMonnifyApiKey(appSettings.monnifyApiKey);
-      if (appSettings.monnifySecretKey) setMonnifySecretKey(appSettings.monnifySecretKey);
-      if (appSettings.monnifyContractCode) setMonnifyContractCode(appSettings.monnifyContractCode);
+      if (appSettings.monnifyApiKey && appSettings.monnifyApiKey !== 'MK_PROD_VRXL0T3UDD') setMonnifyApiKey(appSettings.monnifyApiKey);
+      if (appSettings.monnifySecretKey && !appSettings.monnifySecretKey.includes('8SJL')) setMonnifySecretKey(appSettings.monnifySecretKey);
+      setMonnifyContractCode(appSettings.monnifyContractCode || "730430763017");
       if (appSettings.monnifyWalletAccount) setMonnifyWalletAccount(appSettings.monnifyWalletAccount);
       if (appSettings.monnifyBaseUrl) setMonnifyBaseUrl(appSettings.monnifyBaseUrl);
+      if (Array.isArray(appSettings.monnifyPaymentMethods) && appSettings.monnifyPaymentMethods.length > 0) {
+        setMonnifyPaymentMethods(appSettings.monnifyPaymentMethods);
+      }
+      if (appSettings.appName) setAppNameInput(appSettings.appName);
+      if (appSettings.logoTagline) setLogoTaglineInput(appSettings.logoTagline);
+      if (appSettings.logoUrl) setLogoUrlInput(appSettings.logoUrl);
+      if (appSettings.referralBonusAmount !== undefined) setReferralBonusInput(appSettings.referralBonusAmount);
+      if (appSettings.referralWelcomeBonus !== undefined) setWelcomeBonusInput(appSettings.referralWelcomeBonus);
+      if (appSettings.goldTierPointsThreshold !== undefined) setGoldTierThresholdInput(appSettings.goldTierPointsThreshold);
+      if (appSettings.dailyCheckinPoints !== undefined) setDailyPointsInput(appSettings.dailyCheckinPoints);
     }
   }, [appSettings]);
 
@@ -226,7 +332,7 @@ export default function SuperAdminPage() {
       const res = await testMonnifyCredentials({
         apiKey: monnifyApiKey,
         secretKey: monnifySecretKey,
-        contractCode: monnifyContractCode,
+        contractCode: monnifyContractCode || "730430763017",
         baseUrl: monnifyBaseUrl
       });
       if (res.success) {
@@ -250,9 +356,10 @@ export default function SuperAdminPage() {
       const res = await saveMonnifyCredentials({
         apiKey: monnifyApiKey,
         secretKey: monnifySecretKey,
-        contractCode: monnifyContractCode,
+        contractCode: monnifyContractCode || "730430763017",
         walletAccount: monnifyWalletAccount,
-        baseUrl: monnifyBaseUrl
+        baseUrl: monnifyBaseUrl,
+        paymentMethods: monnifyPaymentMethods
       });
       if (res.success) {
         toast({ title: "Gateway Credentials Saved", description: res.message });
@@ -264,6 +371,347 @@ export default function SuperAdminPage() {
       toast({ title: "Save Error", description: e.message, variant: "destructive" });
     } finally {
       setIsSavingCredentials(false);
+    }
+  };
+
+  // Branding Management Handlers
+  const handleSaveBranding = async () => {
+    if (!firestore) return;
+    setIsSavingBranding(true);
+    try {
+      await updateDocumentNonBlocking(doc(firestore, 'application_settings', 'global_settings'), {
+        appName: appNameInput,
+        logoTagline: logoTaglineInput,
+        logoUrl: logoUrlInput,
+        updatedAt: new Date().toISOString()
+      });
+      logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'UPDATE_BRANDING', appName: appNameInput, logoUrl: logoUrlInput });
+      toast({ title: "Branding Saved Successfully", description: "Your custom logo, app name, and tagline are now live." });
+    } catch (e: any) {
+      toast({ title: "Branding Save Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSavingBranding(false);
+    }
+  };
+
+  // Adverts & Campaigns Handlers
+  const handleOpenAdvertSheet = (advert?: any) => {
+    if (advert) {
+      setEditingAdvert(advert);
+      setAdvertTitle(advert.title || "");
+      setAdvertDescription(advert.description || "");
+      setAdvertType(advert.type || "Ad");
+      setAdvertImageUrl(advert.imageUrl || "https://picsum.photos/seed/promo/600/400");
+      setAdvertTargetUrl(advert.targetUrl || "/services");
+      setAdvertPromoCode(advert.promoCode || "");
+      setAdvertStatus(advert.status || "Active");
+    } else {
+      setEditingAdvert(null);
+      setAdvertTitle("");
+      setAdvertDescription("");
+      setAdvertType("Ad");
+      setAdvertImageUrl("https://picsum.photos/seed/promo/600/400");
+      setAdvertTargetUrl("/services");
+      setAdvertPromoCode("");
+      setAdvertStatus("Active");
+    }
+    setIsAdvertSheetOpen(true);
+  };
+
+  const handleSaveAdvert = async () => {
+    if (!firestore) return;
+    if (!advertTitle.trim()) {
+      toast({ title: "Missing Title", description: "Please enter a campaign title.", variant: "destructive" });
+      return;
+    }
+    setIsSavingAdvert(true);
+    try {
+      const data = {
+        title: advertTitle,
+        description: advertDescription,
+        type: advertType,
+        imageUrl: advertImageUrl,
+        targetUrl: advertTargetUrl,
+        promoCode: advertPromoCode,
+        status: advertStatus,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (editingAdvert) {
+        await updateDocumentNonBlocking(doc(firestore, 'campaigns', editingAdvert.id), data);
+        logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'EDIT_CAMPAIGN', campaignId: editingAdvert.id, title: advertTitle });
+        toast({ title: "Advert Updated", description: `Campaign "${advertTitle}" updated.` });
+      } else {
+        await addDocumentNonBlocking(collection(firestore, 'campaigns'), {
+          ...data,
+          createdAt: new Date().toISOString()
+        });
+        logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'CREATE_CAMPAIGN', title: advertTitle, type: advertType });
+        toast({ title: "Advert Published", description: `New campaign "${advertTitle}" is active.` });
+      }
+      setIsAdvertSheetOpen(false);
+    } catch (e: any) {
+      toast({ title: "Advert Save Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSavingAdvert(false);
+    }
+  };
+
+  const handleToggleAdvertStatus = async (advertId: string, currentStatus: string) => {
+    if (!firestore) return;
+    const newStatus = currentStatus === 'Active' ? 'Paused' : 'Active';
+    await updateDocumentNonBlocking(doc(firestore, 'campaigns', advertId), {
+      status: newStatus,
+      updatedAt: new Date().toISOString()
+    });
+    logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'TOGGLE_CAMPAIGN', campaignId: advertId, newStatus });
+    toast({ title: "Campaign Updated", description: `Campaign is now ${newStatus}` });
+  };
+
+  const handleDeleteAdvert = async (advertId: string) => {
+    if (!firestore) return;
+    if (!confirm("Are you sure you want to delete this advertisement campaign?")) return;
+    await deleteDocumentNonBlocking(doc(firestore, 'campaigns', advertId));
+    logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'DELETE_CAMPAIGN', campaignId: advertId });
+    toast({ title: "Advert Deleted", description: "Campaign removed." });
+  };
+
+  // Rewards & Quests Handlers
+  const handleSaveRewardsSettings = async () => {
+    if (!firestore) return;
+    setIsSavingRewardsSettings(true);
+    try {
+      await updateDocumentNonBlocking(doc(firestore, 'application_settings', 'global_settings'), {
+        referralBonusAmount: Number(referralBonusInput),
+        referralWelcomeBonus: Number(welcomeBonusInput),
+        goldTierPointsThreshold: Number(goldTierThresholdInput),
+        dailyCheckinPoints: Number(dailyPointsInput),
+        updatedAt: new Date().toISOString()
+      });
+      logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'UPDATE_REWARDS_SETTINGS', referralBonusInput });
+      toast({ title: "Rewards Settings Saved", description: "Global referral bonuses and loyalty tiers updated." });
+    } catch (e: any) {
+      toast({ title: "Rewards Settings Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSavingRewardsSettings(false);
+    }
+  };
+
+  const handleCreateQuest = async () => {
+    if (!firestore) return;
+    if (!questTitleInput.trim()) {
+      toast({ title: "Missing Quest Title", description: "Please enter a title for the quest.", variant: "destructive" });
+      return;
+    }
+    setIsSavingQuest(true);
+    try {
+      await addDocumentNonBlocking(collection(firestore, 'reward_quests'), {
+        title: questTitleInput,
+        reward: questRewardInput || "100 Points",
+        status: "Active",
+        createdAt: new Date().toISOString()
+      });
+      logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'CREATE_QUEST', title: questTitleInput });
+      toast({ title: "Quest Added", description: `Quest "${questTitleInput}" created.` });
+      setQuestTitleInput("");
+      setQuestRewardInput("");
+    } catch (e: any) {
+      toast({ title: "Quest Creation Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSavingQuest(false);
+    }
+  };
+
+  const handleDeleteQuest = async (questId: string) => {
+    if (!firestore) return;
+    if (!confirm("Are you sure you want to delete this quest?")) return;
+    await deleteDocumentNonBlocking(doc(firestore, 'reward_quests', questId));
+    logAuditAction(AuditAction.CONFIG_UPDATE, { action: 'DELETE_QUEST', questId });
+    toast({ title: "Quest Deleted", description: "Quest removed." });
+  };
+
+  const handleGrantUserReward = async () => {
+    if (!firestore || !rewardTargetUserId) {
+      toast({ title: "Select Target User", description: "Please select a user to grant rewards to.", variant: "destructive" });
+      return;
+    }
+    if (grantBonusAmount <= 0 && grantLoyaltyPoints <= 0) {
+      toast({ title: "Enter Amount", description: "Specify either bonus cash (₦) or loyalty points.", variant: "destructive" });
+      return;
+    }
+    setIsGrantingReward(true);
+    try {
+      await addDocumentNonBlocking(collection(firestore, 'users', rewardTargetUserId, 'rewards'), {
+        amount: Number(grantBonusAmount),
+        points: Number(grantLoyaltyPoints),
+        description: grantReason || "Admin Reward Allocation",
+        type: grantBonusAmount > 0 ? "Cashback" : "Loyalty",
+        status: "Available",
+        date: new Date().toISOString()
+      });
+
+      logAuditAction(AuditAction.CONFIG_UPDATE, { 
+        action: 'GRANT_REWARD', 
+        targetUserId: rewardTargetUserId, 
+        amount: grantBonusAmount, 
+        points: grantLoyaltyPoints 
+      });
+
+      toast({ title: "Reward Granted!", description: `Allocated ₦${grantBonusAmount} bonus & ${grantLoyaltyPoints} points to partner user.` });
+      setGrantBonusAmount(0);
+      setGrantLoyaltyPoints(0);
+      setGrantReason("");
+    } catch (e: any) {
+      toast({ title: "Grant Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsGrantingReward(false);
+    }
+  };
+
+  // Funding Requests Clearance Actions
+  const handleApproveFunding = async (item: any) => {
+    if (!user?.email || !user?.uid) return;
+    setIsApprovingFunding(true);
+    try {
+      const res = await approveFundingRequest({
+        requestId: item.id,
+        adminEmail: user.email,
+        adminUid: user.uid,
+        note: approvalNote || 'Approved via SuperAdmin Wallet Clearance'
+      });
+      if (res.success) {
+        toast({
+          title: "Funding Approved & Credited",
+          description: `Successfully authorized and credited ₦${Number(item.amount).toLocaleString()} to ${item.userEmail || item.userId}.`,
+          className: "bg-green-600 text-white"
+        });
+        setSelectedFundingRequest(null);
+        setIsApproveDialogOpen(false);
+        setApprovalNote("");
+      } else {
+        toast({
+          title: "Approval Failed",
+          description: res.error || "Could not complete wallet crediting.",
+          variant: "destructive"
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Execution Error", description: err?.message || "Internal error", variant: "destructive" });
+    } finally {
+      setIsApprovingFunding(false);
+    }
+  };
+
+  const handleRejectFunding = async (item: any) => {
+    if (!user?.email || !user?.uid) return;
+    setIsRejectingFunding(true);
+    try {
+      const res = await rejectFundingRequest({
+        requestId: item.id,
+        adminEmail: user.email,
+        adminUid: user.uid,
+        rejectionReason: rejectionReasonInput || 'Declined by Administrator audit'
+      });
+      if (res.success) {
+        toast({
+          title: "Funding Request Declined",
+          description: `Transaction ${item.reference} rejected. Wallet balance remained untouched.`
+        });
+        setSelectedFundingRequest(null);
+        setIsRejectDialogOpen(false);
+        setRejectionReasonInput("");
+      } else {
+        toast({
+          title: "Rejection Failed",
+          description: res.error || "Could not update status.",
+          variant: "destructive"
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Execution Error", description: err?.message || "Internal error", variant: "destructive" });
+    } finally {
+      setIsRejectingFunding(false);
+    }
+  };
+
+  const handleLiveVerifyMonnify = async (item: any) => {
+    if (!item?.reference) return;
+    setIsVerifyingMonnifyRef(true);
+    try {
+      const res = await verifyMonnifyGatewayMatch({
+        reference: item.reference,
+        expectedAmount: Number(item.amount),
+        expectedUserEmail: item.userEmail
+      });
+      if (res.success && res.gatewayData) {
+        setMonnifyVerifyData(res.gatewayData);
+        setMonnifyMatchReport(res);
+        if (res.isMatched) {
+          toast({
+            title: "Monnify Gateway 100% Matched",
+            description: `Contract: ${res.gatewayData.contractCode || '730430763017'} | Settled: ₦${Number(res.gatewayData.amountPaid || res.gatewayData.amount || item.amount).toLocaleString()} | Status: ${res.gatewayData.paymentStatus || 'PAID'}`,
+            className: "bg-green-600 text-white"
+          });
+        } else {
+          toast({
+            title: "Gateway Verification Notice",
+            description: res.discrepancies.join(' | ') || "Discrepancy detected with gateway record.",
+            variant: "destructive"
+          });
+        }
+      } else {
+        setMonnifyVerifyData(null);
+        setMonnifyMatchReport(res);
+        toast({
+          title: "Monnify Query Notice",
+          description: res.error || "Gateway record not confirmed yet.",
+          variant: "destructive"
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Verification Error", description: err?.message, variant: "destructive" });
+    } finally {
+      setIsVerifyingMonnifyRef(false);
+    }
+  };
+
+  const handleExecuteManualCredit = async () => {
+    if (!manualCreditUserId || !manualCreditAmount || Number(manualCreditAmount) <= 0) {
+      toast({ title: "Invalid Parameters", description: "Select user and specify valid amount (min ₦1).", variant: "destructive" });
+      return;
+    }
+    if (!user?.email || !user?.uid) return;
+    setIsProcessingManualCredit(true);
+    try {
+      const targetUserObj = platformUsers?.find((u: any) => u.id === manualCreditUserId);
+      const targetUserEmail = targetUserObj?.email || 'customer@call-on-demand.com';
+
+      const res = await manualCreditUserWallet({
+        userId: manualCreditUserId,
+        userEmail: targetUserEmail,
+        amount: Number(manualCreditAmount),
+        reason: manualCreditReason || 'Manual Admin Credit Adjustment',
+        adminEmail: user.email,
+        adminUid: user.uid
+      });
+
+      if (res.success) {
+        toast({
+          title: "Manual Credit Executed",
+          description: `Successfully credited ₦${Number(manualCreditAmount).toLocaleString()} to ${targetUserEmail}.`,
+          className: "bg-green-600 text-white"
+        });
+        setIsManualCreditOpen(false);
+        setManualCreditUserId("");
+        setManualCreditAmount("");
+        setManualCreditReason("");
+      } else {
+        toast({ title: "Credit Failed", description: res.error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message, variant: "destructive" });
+    } finally {
+      setIsProcessingManualCredit(false);
     }
   };
 
@@ -327,6 +775,49 @@ export default function SuperAdminPage() {
       u.role?.toLowerCase().includes(queryStr)
     );
   }, [platformUsers, userSearch]);
+
+  const pendingFundingRequests = useMemo(() => {
+    if (!fundingRequestsList) return [];
+    return fundingRequestsList.filter((r: any) => r.status === 'Pending Approval');
+  }, [fundingRequestsList]);
+
+  const pendingFundingCount = pendingFundingRequests.length;
+
+  const pendingFundingTotal = useMemo(() => {
+    return pendingFundingRequests.reduce((acc: number, r: any) => acc + (Number(r.amount) || 0), 0);
+  }, [pendingFundingRequests]);
+
+  const approvedFundingTotal = useMemo(() => {
+    if (!fundingRequestsList) return 0;
+    return fundingRequestsList
+      .filter((r: any) => r.status === 'Approved')
+      .reduce((acc: number, r: any) => acc + (Number(r.amount) || 0), 0);
+  }, [fundingRequestsList]);
+
+  const rejectedFundingCount = useMemo(() => {
+    if (!fundingRequestsList) return 0;
+    return fundingRequestsList.filter((r: any) => r.status === 'Rejected').length;
+  }, [fundingRequestsList]);
+
+  const filteredFundingRequests = useMemo(() => {
+    if (!fundingRequestsList) return [];
+    return fundingRequestsList
+      .filter((r: any) => {
+        const matchesStatus = fundingStatusFilter === "All" || r.status === fundingStatusFilter;
+        if (!matchesStatus) return false;
+        if (!fundingSearch) return true;
+        const q = fundingSearch.toLowerCase();
+        return (
+          r.reference?.toLowerCase().includes(q) ||
+          r.gatewayId?.toLowerCase().includes(q) ||
+          r.userEmail?.toLowerCase().includes(q) ||
+          r.userName?.toLowerCase().includes(q) ||
+          r.userId?.toLowerCase().includes(q) ||
+          String(r.amount).includes(q)
+        );
+      })
+      .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }, [fundingRequestsList, fundingStatusFilter, fundingSearch]);
 
   const handleUpdateSetting = (field: string, value: any) => {
     if (!settingsRef) return;
@@ -586,8 +1077,19 @@ export default function SuperAdminPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
         <TabsList className="bg-muted/50 p-1 h-auto flex-wrap gap-1 rounded-[1.5rem] border shadow-sm w-full">
           <TabsTrigger value="overview" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><Activity className="h-4 w-4" /> Stats</TabsTrigger>
+          <TabsTrigger value="funding" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase text-amber-600 bg-amber-500/10 data-[state=active]:bg-amber-600 data-[state=active]:text-white transition-all shadow-sm">
+            <ShieldCheck className="h-4 w-4" /> Wallet Approvals
+            {pendingFundingCount > 0 && (
+              <span className="bg-red-600 text-white font-black text-[9px] px-1.5 py-0.5 rounded-full leading-none ml-1 animate-pulse shadow">
+                {pendingFundingCount}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="tasks" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><ClipboardList className="h-4 w-4" /> Tasks</TabsTrigger>
           <TabsTrigger value="users" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><Users className="h-4 w-4" /> KYC</TabsTrigger>
+          <TabsTrigger value="branding" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><Palette className="h-4 w-4" /> Logo & Brand</TabsTrigger>
+          <TabsTrigger value="adverts" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><Megaphone className="h-4 w-4" /> Adverts</TabsTrigger>
+          <TabsTrigger value="rewards" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><Gift className="h-4 w-4" /> Rewards</TabsTrigger>
           <TabsTrigger value="units" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><Building2 className="h-4 w-4" /> Units</TabsTrigger>
           <TabsTrigger value="audit" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase text-red-600"><Lock className="h-4 w-4 text-red-600" /> Audit</TabsTrigger>
           <TabsTrigger value="investments" className="flex-1 gap-2 rounded-xl h-11 px-4 font-bold text-[10px] uppercase"><TrendingUp className="h-4 w-4" /> Growth</TabsTrigger>
@@ -637,6 +1139,303 @@ export default function SuperAdminPage() {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* WALLET FUNDING & CLEARANCE HUB TAB */}
+        <TabsContent value="funding" className="space-y-8">
+          {/* Institutional Security Notice */}
+          <div className="bg-amber-500/10 border-2 border-amber-500/30 rounded-[2rem] p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-amber-500/20 flex items-center justify-center shrink-0 text-amber-600">
+                <ShieldCheck className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-black text-sm uppercase tracking-wider text-amber-950">Monnify Funding Gatekeeper (Manual Approval Active)</h3>
+                  <Badge className="bg-amber-600 text-white font-black text-[8px] uppercase border-none">Auto-Credit Disabled</Badge>
+                </div>
+                <p className="text-xs text-amber-900/80 font-medium max-w-2xl leading-relaxed">
+                  Incoming Monnify payments are held in the verification queue. Authorize legitimate deposits below to increment partner wallet balances, or reject fraudulent/duplicate references.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <Button 
+                onClick={() => setIsManualCreditOpen(true)} 
+                className="rounded-xl h-10 px-4 font-black text-xs uppercase bg-primary hover:bg-primary/90 text-white gap-2 shadow-sm"
+              >
+                <Plus className="h-4 w-4" /> Manual Credit User
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => exportToCsv(fundingRequestsList || [], 'funding_requests_audit.csv')} 
+                className="rounded-xl h-10 px-4 font-black text-xs uppercase border-2 gap-2"
+              >
+                <Download className="h-4 w-4" /> Export CSV
+              </Button>
+            </div>
+          </div>
+
+          {/* Metric KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="rounded-[2rem] border-2 border-amber-300 bg-amber-50/50 p-6 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-800">Pending Authorization</span>
+                <Clock className="h-4 w-4 text-amber-600 animate-pulse" />
+              </div>
+              <div className="mt-4">
+                <div className="text-3xl font-black tracking-tight text-amber-950">₦{pendingFundingTotal.toLocaleString()}</div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-amber-700 mt-1">
+                  {pendingFundingCount} deposit request(s) awaiting clearance
+                </div>
+              </div>
+            </Card>
+
+            <Card className="rounded-[2rem] border-2 border-green-200 bg-green-50/40 p-6 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-green-800">Total Cleared & Credited</span>
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+              </div>
+              <div className="mt-4">
+                <div className="text-3xl font-black tracking-tight text-green-950">₦{approvedFundingTotal.toLocaleString()}</div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-green-700 mt-1">
+                  Authorized & posted to ledger
+                </div>
+              </div>
+            </Card>
+
+            <Card className="rounded-[2rem] border-2 border-red-200 bg-red-50/40 p-6 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-800">Declined / Rejected</span>
+                <XCircle className="h-4 w-4 text-red-600" />
+              </div>
+              <div className="mt-4">
+                <div className="text-3xl font-black tracking-tight text-red-950">{rejectedFundingCount}</div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-red-700 mt-1">
+                  Blocked from wallet balance
+                </div>
+              </div>
+            </Card>
+
+            <Card className="rounded-[2rem] border-2 bg-card p-6 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total Requests Tracked</span>
+                <Landmark className="h-4 w-4 text-primary" />
+              </div>
+              <div className="mt-4">
+                <div className="text-3xl font-black tracking-tight">{fundingRequestsList?.length || 0}</div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mt-1">
+                  Monnify Direct & Webhook Entries
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Filtering & Requests Table */}
+          <Card className="rounded-[2.5rem] border-2 shadow-sm overflow-hidden bg-card">
+            <CardHeader className="bg-muted/10 p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2">
+                  <History className="h-5 w-5 text-primary" /> Funding Clearance Queue
+                </CardTitle>
+                <CardDescription className="text-xs font-semibold">
+                  Review transaction telemetry and authorize balance adjustments.
+                </CardDescription>
+              </div>
+
+              {/* Status Filter Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                {['Pending Approval', 'All', 'Approved', 'Rejected'].map((status) => (
+                  <Button
+                    key={status}
+                    variant={fundingStatusFilter === status ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFundingStatusFilter(status)}
+                    className={cn(
+                      "rounded-xl h-8 px-3 text-[10px] font-black uppercase",
+                      fundingStatusFilter === status && status === 'Pending Approval' ? "bg-amber-600 hover:bg-amber-700 text-white" : ""
+                    )}
+                  >
+                    {status}
+                    {status === 'Pending Approval' && pendingFundingCount > 0 && (
+                      <span className="ml-1.5 px-1.5 py-0.2 bg-white text-amber-800 text-[8px] font-black rounded-full">
+                        {pendingFundingCount}
+                      </span>
+                    )}
+                  </Button>
+                ))}
+              </div>
+            </CardHeader>
+
+            {/* Search toolbar */}
+            <div className="p-4 border-b bg-muted/5 flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={fundingSearch}
+                  onChange={(e) => setFundingSearch(e.target.value)}
+                  placeholder="Search by Payment Reference, Email, Name, or User ID..."
+                  className="pl-9 h-10 rounded-xl border-2 font-medium text-xs bg-background"
+                />
+              </div>
+            </div>
+
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/30">
+                    <TableRow>
+                      <TableHead className="font-black text-[10px] uppercase pl-6">Reference & Date</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Customer / Partner</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Amount & Method</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Monnify Gateway</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Clearance Status</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase text-right pr-6">Review & Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isFundingLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-20 text-center">
+                          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary mb-2" />
+                          <p className="text-xs font-bold text-muted-foreground uppercase">Loading Clearance Ledger...</p>
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredFundingRequests.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-20 text-center text-muted-foreground">
+                          <CheckCircle2 className="h-10 w-10 mx-auto mb-3 opacity-20 text-green-600" />
+                          <p className="text-xs font-black uppercase tracking-wider">No funding requests found in this view</p>
+                          <p className="text-[11px] font-medium text-muted-foreground mt-1">
+                            {fundingStatusFilter === 'Pending Approval' ? 'All Monnify deposits have been cleared and authorized.' : 'No transactions match the selected filter.'}
+                          </p>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredFundingRequests.map((req: any) => (
+                        <TableRow key={req.id} className="hover:bg-muted/30 transition-colors">
+                          <TableCell className="pl-6 py-4">
+                            <div className="space-y-1">
+                              <span className="font-mono font-black text-xs text-foreground block">{req.reference}</span>
+                              <div className="flex items-center gap-1.5 text-[9px] font-bold text-muted-foreground uppercase">
+                                <Clock className="h-2.5 w-2.5" />
+                                {mounted && req.createdAt ? new Date(req.createdAt).toLocaleString() : '...'}
+                              </div>
+                              {req.gatewayId && req.gatewayId !== req.reference && (
+                                <span className="text-[9px] font-mono text-muted-foreground block truncate max-w-[140px]">
+                                  GW: {req.gatewayId}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="space-y-0.5">
+                              <span className="font-black text-xs block">{req.userName || 'Partner'}</span>
+                              <span className="font-medium text-[11px] text-muted-foreground block">{req.userEmail}</span>
+                              <span className="font-mono text-[9px] text-muted-foreground/60 block">UID: {req.userId?.slice(0, 10)}...</span>
+                            </div>
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="space-y-0.5">
+                              <span className="font-black text-sm text-green-700 block">₦{Number(req.amount || 0).toLocaleString()}</span>
+                              <Badge variant="outline" className="text-[8px] font-bold uppercase px-1.5 py-0 border-muted">
+                                {req.paymentMethod || 'Monnify Direct'}
+                              </Badge>
+                            </div>
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="space-y-1">
+                              <Badge className={cn(
+                                "text-[9px] font-black uppercase border-none",
+                                req.gatewayStatus === 'PAID' ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground"
+                              )}>
+                                Monnify: {req.gatewayStatus || 'PENDING'}
+                              </Badge>
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleLiveVerifyMonnify(req)}
+                                  disabled={isVerifyingMonnifyRef}
+                                  className="text-[9px] font-black text-primary hover:underline inline-flex items-center gap-1"
+                                >
+                                  <RefreshCw className="h-2.5 w-2.5" /> Live Re-Verify
+                                </button>
+                              </div>
+                            </div>
+                          </TableCell>
+
+                          <TableCell>
+                            {req.status === 'Pending Approval' ? (
+                              <Badge className="bg-amber-100 text-amber-800 border border-amber-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                <Clock className="h-3 w-3 animate-pulse" /> Pending Approval
+                              </Badge>
+                            ) : req.status === 'Approved' ? (
+                              <div className="space-y-0.5">
+                                <Badge className="bg-green-100 text-green-800 border border-green-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                  <CheckCircle2 className="h-3 w-3" /> Cleared & Credited
+                                </Badge>
+                                <span className="text-[8px] font-semibold text-muted-foreground block">
+                                  By: {req.approvedBy?.split('@')[0] || 'Admin'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="space-y-0.5">
+                                <Badge className="bg-red-100 text-red-800 border border-red-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                  <XCircle className="h-3 w-3" /> Declined
+                                </Badge>
+                                {req.rejectionReason && (
+                                  <span className="text-[8px] font-medium text-red-600 block max-w-[120px] truncate" title={req.rejectionReason}>
+                                    {req.rejectionReason}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+
+                          <TableCell className="pr-6 text-right">
+                            {req.status === 'Pending Approval' ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedFundingRequest(req);
+                                    setIsApproveDialogOpen(true);
+                                  }}
+                                  disabled={isApprovingFunding}
+                                  className="h-8 px-3 rounded-xl font-black text-[10px] uppercase bg-green-600 hover:bg-green-700 text-white gap-1.5 shadow-sm"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Approve & Credit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedFundingRequest(req);
+                                    setIsRejectDialogOpen(true);
+                                  }}
+                                  disabled={isRejectingFunding}
+                                  className="h-8 px-3 rounded-xl font-black text-[10px] uppercase text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+                                >
+                                  <Ban className="h-3.5 w-3.5" /> Decline
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="text-[10px] font-bold text-muted-foreground">
+                                {req.approvedAt || req.rejectedAt ? (mounted ? new Date(req.approvedAt || req.rejectedAt).toLocaleDateString() : '...') : 'Processed'}
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1213,11 +2012,572 @@ export default function SuperAdminPage() {
                     </Select>
                   </div>
                 </div>
+
+                <div className="space-y-2 pt-2 border-t">
+                  <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Enabled Payment Methods</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { code: "CARD", label: "CARD" },
+                      { code: "USSD", label: "USSD" },
+                      { code: "DIRECT_DEBIT", label: "DIRECT DEBIT" },
+                      { code: "ACCOUNT_TRANSFER", label: "ACCOUNT TRANSFER" },
+                      { code: "CASH", label: "CASH" },
+                      { code: "PHONE_NUMBER", label: "PHONE NUMBER" }
+                    ].map((pm) => {
+                      const isActive = monnifyPaymentMethods.includes(pm.code);
+                      return (
+                        <button
+                          key={pm.code}
+                          type="button"
+                          onClick={() => {
+                            if (isActive) {
+                              setMonnifyPaymentMethods(monnifyPaymentMethods.filter(m => m !== pm.code));
+                            } else {
+                              setMonnifyPaymentMethods([...monnifyPaymentMethods, pm.code]);
+                            }
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xl border-2 font-black text-xs transition-all flex items-center gap-1.5 uppercase",
+                            isActive ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-muted/30 text-muted-foreground border-transparent hover:border-muted"
+                          )}
+                        >
+                          <Check className={cn("h-3.5 w-3.5", isActive ? "opacity-100" : "opacity-0")} />
+                          {pm.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Logo & Brand Management Tab */}
+        <TabsContent value="branding" className="space-y-8">
+          <Card className="rounded-[2.5rem] border-2 shadow-xl bg-card overflow-hidden">
+            <CardHeader className="bg-muted/30 p-8 border-b">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                  <Palette className="h-6 w-6" />
+                </div>
+                <div>
+                  <CardTitle className="text-2xl font-black uppercase tracking-tight">Logo & Brand Identity</CardTitle>
+                  <CardDescription className="text-xs font-semibold">Customize logo mark, title and tagline across the mobile app and portal.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-8 space-y-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Brand Inputs */}
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">App Title / Brand Name</Label>
+                    <Input
+                      value={appNameInput}
+                      onChange={(e) => setAppNameInput(e.target.value)}
+                      placeholder="e.g. Call on Demand"
+                      className="h-12 rounded-2xl border-2 font-bold text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Brand Tagline / Subtitle</Label>
+                    <Input
+                      value={logoTaglineInput}
+                      onChange={(e) => setLogoTaglineInput(e.target.value)}
+                      placeholder="e.g. Lifestyle Services"
+                      className="h-12 rounded-2xl border-2 font-bold text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Custom Logo Image URL</Label>
+                    <Input
+                      value={logoUrlInput}
+                      onChange={(e) => setLogoUrlInput(e.target.value)}
+                      placeholder="e.g. https://... or /logo.png"
+                      className="h-12 rounded-2xl border-2 font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Preset Logo Options</Label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { name: "Default Brand", url: "/logo.png" },
+                        { name: "Gold Emblem", url: "https://picsum.photos/seed/codbrand/200/200" },
+                        { name: "Call Ring", url: "https://picsum.photos/seed/codlogo/200/200" },
+                        { name: "Crown Shield", url: "https://picsum.photos/seed/codbrand3/200/200" }
+                      ].map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setLogoUrlInput(preset.url)}
+                          className={cn(
+                            "p-3 rounded-2xl border-2 text-center transition-all flex flex-col items-center gap-2",
+                            logoUrlInput === preset.url ? "border-primary bg-primary/5 shadow-md" : "border-muted hover:border-muted-foreground/30"
+                          )}
+                        >
+                          <div className="h-10 w-10 rounded-full border bg-white overflow-hidden relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={preset.url} alt={preset.name} className="h-full w-full object-cover" />
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-wider">{preset.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={handleSaveBranding}
+                    disabled={isSavingBranding}
+                    className="w-full h-14 rounded-2xl font-black text-sm uppercase bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 gap-2"
+                  >
+                    {isSavingBranding ? <Loader2 className="h-5 w-5 animate-spin" /> : <Palette className="h-5 w-5" />}
+                    Save Logo & Branding Settings
+                  </Button>
+                </div>
+
+                {/* Live Brand Preview Card */}
+                <div className="space-y-6">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground block">Live Interface Preview</Label>
+                  
+                  <div className="p-6 rounded-[2rem] border-2 bg-slate-50 dark:bg-slate-900/50 space-y-6">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Light Theme Header</span>
+                      <div className="p-4 rounded-2xl bg-white border shadow-sm flex items-center justify-between">
+                        <BrandLogo />
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[9px] font-black uppercase">Preview</Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Dark Theme Overlay</span>
+                      <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 shadow-md flex items-center justify-between">
+                        <BrandLogo light />
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-primary text-white text-[9px] font-black uppercase border-none">Active</Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 text-xs font-medium space-y-1">
+                      <p className="font-black text-primary uppercase text-[10px]">Realtime Synchronization</p>
+                      <p className="text-muted-foreground">Changes saved here automatically update all navigation bars, footers, and brand elements across the platform.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Advertisements & Campaigns Tab */}
+        <TabsContent value="adverts" className="space-y-8">
+          <Card className="rounded-[2.5rem] border-2 shadow-xl bg-card overflow-hidden">
+            <CardHeader className="bg-muted/30 p-8 border-b flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                  <Megaphone className="h-6 w-6" />
+                </div>
+                <div>
+                  <CardTitle className="text-2xl font-black uppercase tracking-tight">Adverts & Promos</CardTitle>
+                  <CardDescription className="text-xs font-semibold">Manage marketing banners, promo popups, and announcement campaigns.</CardDescription>
+                </div>
+              </div>
+              <Button
+                onClick={() => handleOpenAdvertSheet()}
+                className="h-12 px-6 rounded-2xl font-black text-xs uppercase bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 gap-2"
+              >
+                <Plus className="h-4 w-4" /> Create New Advert
+              </Button>
+            </CardHeader>
+
+            <CardContent className="p-8">
+              {campaignsList && campaignsList.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {campaignsList.map((campaign: any) => (
+                    <Card key={campaign.id} className="rounded-3xl border-2 overflow-hidden bg-card flex flex-col justify-between group hover:border-primary transition-all shadow-sm">
+                      <div className="relative h-40 w-full bg-muted">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={campaign.imageUrl || "https://picsum.photos/seed/promo/600/400"} alt={campaign.title} className="h-full w-full object-cover" />
+                        <div className="absolute top-3 left-3 flex gap-2">
+                          <Badge className="bg-black/60 text-white backdrop-blur-md border-none font-black text-[9px] uppercase">
+                            {campaign.type || 'Ad'}
+                          </Badge>
+                          <Badge className={cn(
+                            "font-black text-[9px] uppercase border-none",
+                            campaign.status === 'Active' ? "bg-green-500 text-white" : "bg-yellow-500 text-white"
+                          )}>
+                            {campaign.status || 'Active'}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="p-6 space-y-3 flex-1">
+                        <h4 className="font-black text-lg leading-tight">{campaign.title}</h4>
+                        <p className="text-xs text-muted-foreground font-medium line-clamp-2">{campaign.description || "No description provided."}</p>
+                        {campaign.promoCode && (
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-primary/10 text-primary font-mono text-xs font-black">
+                            <Tag className="h-3.5 w-3.5" /> Code: {campaign.promoCode}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-6 pt-0 flex items-center justify-between border-t border-dashed mt-2 pt-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggleAdvertStatus(campaign.id, campaign.status)}
+                          className="rounded-xl font-black text-[10px] uppercase h-9"
+                        >
+                          {campaign.status === 'Active' ? 'Pause' : 'Activate'}
+                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenAdvertSheet(campaign)}
+                            className="h-9 w-9 rounded-xl border"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteAdvert(campaign.id)}
+                            className="h-9 w-9 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-20 text-center space-y-4">
+                  <div className="h-20 w-20 rounded-full bg-muted/50 flex items-center justify-center mx-auto text-muted-foreground opacity-30">
+                    <Megaphone className="h-10 w-10" />
+                  </div>
+                  <p className="font-black uppercase text-xs text-muted-foreground tracking-wider">No Active Campaigns Found</p>
+                  <Button onClick={() => handleOpenAdvertSheet()} variant="outline" className="rounded-xl font-black text-xs uppercase h-10">
+                    Create First Advert
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Rewards & Quests Tab */}
+        <TabsContent value="rewards" className="space-y-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Global Rewards Rules Card */}
+            <Card className="rounded-[2.5rem] border-2 shadow-xl bg-card overflow-hidden">
+              <CardHeader className="bg-muted/30 p-8 border-b">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                    <Gift className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl font-black uppercase tracking-tight">Global Reward Rates</CardTitle>
+                    <CardDescription className="text-xs font-semibold">Configure referral payouts, welcome bonuses, and loyalty thresholds.</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Referral Bonus (Inviter) (₦)</Label>
+                  <Input
+                    type="number"
+                    value={referralBonusInput}
+                    onChange={(e) => setReferralBonusInput(Number(e.target.value))}
+                    className="h-12 rounded-2xl border-2 font-mono font-bold text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Welcome Bonus (Invitee) (₦)</Label>
+                  <Input
+                    type="number"
+                    value={welcomeBonusInput}
+                    onChange={(e) => setWelcomeBonusInput(Number(e.target.value))}
+                    className="h-12 rounded-2xl border-2 font-mono font-bold text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gold Tier Threshold (Loyalty Points)</Label>
+                  <Input
+                    type="number"
+                    value={goldTierThresholdInput}
+                    onChange={(e) => setGoldTierThresholdInput(Number(e.target.value))}
+                    className="h-12 rounded-2xl border-2 font-mono font-bold text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Daily Check-in Loyalty Points</Label>
+                  <Input
+                    type="number"
+                    value={dailyPointsInput}
+                    onChange={(e) => setDailyPointsInput(Number(e.target.value))}
+                    className="h-12 rounded-2xl border-2 font-mono font-bold text-sm"
+                  />
+                </div>
+
+                <Button
+                  onClick={handleSaveRewardsSettings}
+                  disabled={isSavingRewardsSettings}
+                  className="w-full h-14 rounded-2xl font-black text-sm uppercase bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 gap-2"
+                >
+                  {isSavingRewardsSettings ? <Loader2 className="h-5 w-5 animate-spin" /> : <Award className="h-5 w-5" />}
+                  Save Reward Rules
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Quests & Direct Bonus Grant Card */}
+            <div className="space-y-8">
+              {/* Quests Manager */}
+              <Card className="rounded-[2.5rem] border-2 shadow-xl bg-card overflow-hidden">
+                <CardHeader className="bg-muted/30 p-6 border-b">
+                  <CardTitle className="text-lg font-black uppercase tracking-tight flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-accent" /> Active Partner Quests
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Quest Title (e.g. First Wallet Top-up)"
+                      value={questTitleInput}
+                      onChange={(e) => setQuestTitleInput(e.target.value)}
+                      className="h-11 rounded-xl border-2 font-semibold text-xs flex-1"
+                    />
+                    <Input
+                      placeholder="Reward (e.g. ₦200)"
+                      value={questRewardInput}
+                      onChange={(e) => setQuestRewardInput(e.target.value)}
+                      className="h-11 rounded-xl border-2 font-semibold text-xs w-32"
+                    />
+                    <Button
+                      onClick={handleCreateQuest}
+                      disabled={isSavingQuest}
+                      className="h-11 px-4 rounded-xl font-black text-xs uppercase bg-primary gap-1"
+                    >
+                      {isSavingQuest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {rewardQuestsList && rewardQuestsList.length > 0 ? (
+                      rewardQuestsList.map((q: any) => (
+                        <div key={q.id} className="p-3 rounded-2xl border flex items-center justify-between bg-muted/20">
+                          <div>
+                            <p className="font-black text-xs">{q.title}</p>
+                            <p className="text-[10px] text-accent font-black uppercase tracking-wider">{q.reward}</p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteQuest(q.id)}
+                            className="h-8 w-8 text-red-500 hover:bg-red-50 rounded-xl"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-4 font-bold uppercase tracking-wider">No Custom Quests Added Yet</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Direct User Reward Grant */}
+              <Card className="rounded-[2.5rem] border-2 shadow-xl bg-card overflow-hidden">
+                <CardHeader className="bg-muted/30 p-6 border-b">
+                  <CardTitle className="text-lg font-black uppercase tracking-tight flex items-center gap-2">
+                    <Send className="h-5 w-5 text-green-500" /> Grant Incentive to Partner User
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground">Select Partner User</Label>
+                    <Select value={rewardTargetUserId} onValueChange={setRewardTargetUserId}>
+                      <SelectTrigger className="h-11 rounded-xl border-2 font-bold text-xs">
+                        <SelectValue placeholder="Select user from registry..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {platformUsers?.map((u: any) => (
+                          <SelectItem key={u.id} value={u.id} className="text-xs font-semibold">
+                            {u.firstName || 'Partner'} {u.lastName || ''} ({u.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase text-muted-foreground">Bonus Amount (₦)</Label>
+                      <Input
+                        type="number"
+                        value={grantBonusAmount}
+                        onChange={(e) => setGrantBonusAmount(Number(e.target.value))}
+                        className="h-11 rounded-xl border-2 font-mono font-bold text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase text-muted-foreground">Loyalty Points</Label>
+                      <Input
+                        type="number"
+                        value={grantLoyaltyPoints}
+                        onChange={(e) => setGrantLoyaltyPoints(Number(e.target.value))}
+                        className="h-11 rounded-xl border-2 font-mono font-bold text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground">Reason / Note</Label>
+                    <Input
+                      placeholder="e.g. Winner of Flash Promo"
+                      value={grantReason}
+                      onChange={(e) => setGrantReason(e.target.value)}
+                      className="h-11 rounded-xl border-2 font-semibold text-xs"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={handleGrantUserReward}
+                    disabled={isGrantingReward}
+                    className="w-full h-12 rounded-xl font-black text-xs uppercase bg-green-600 hover:bg-green-700 text-white gap-2 shadow-md"
+                  >
+                    {isGrantingReward ? <Loader2 className="h-4 w-4 animate-spin" /> : <Gift className="h-4 w-4" />}
+                    Grant Reward & Issue Points
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
       </Tabs>
+
+      {/* Advert Creation/Edit Sheet */}
+      <Sheet open={isAdvertSheetOpen} onOpenChange={setIsAdvertSheetOpen}>
+        <SheetContent className="sm:max-w-lg border-l-4 border-primary rounded-l-[2rem] p-0 flex flex-col">
+          <SheetHeader className="p-8 bg-primary/5 border-b">
+            <SheetTitle className="text-2xl font-black tracking-tighter uppercase flex items-center gap-3">
+              <Megaphone className="h-7 w-7 text-primary" />
+              {editingAdvert ? "Edit Campaign" : "New Advert Campaign"}
+            </SheetTitle>
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-1">Configure marketing advert banners, promo codes, and popups.</p>
+          </SheetHeader>
+
+          <ScrollArea className="flex-1 p-8 space-y-6">
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Campaign Title</Label>
+                <Input
+                  value={advertTitle}
+                  onChange={(e) => setAdvertTitle(e.target.value)}
+                  placeholder="e.g. 50% Off First Errand Booking!"
+                  className="h-12 rounded-2xl border-2 font-bold text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Campaign Description</Label>
+                <Textarea
+                  value={advertDescription}
+                  onChange={(e) => setAdvertDescription(e.target.value)}
+                  placeholder="Describe the promo offer or announcement details..."
+                  className="rounded-2xl border-2 font-medium text-xs min-h-[90px]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Type</Label>
+                  <Select value={advertType} onValueChange={(v: any) => setAdvertType(v)}>
+                    <SelectTrigger className="h-12 rounded-2xl border-2 font-bold text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="Ad">Ad (Dashboard Banner)</SelectItem>
+                      <SelectItem value="Promo">Promo (Popup Offer)</SelectItem>
+                      <SelectItem value="Notification">Announcement</SelectItem>
+                      <SelectItem value="Banner">Top Banner</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Status</Label>
+                  <Select value={advertStatus} onValueChange={(v: any) => setAdvertStatus(v)}>
+                    <SelectTrigger className="h-12 rounded-2xl border-2 font-bold text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Paused">Paused</SelectItem>
+                      <SelectItem value="Completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Banner Image URL</Label>
+                <Input
+                  value={advertImageUrl}
+                  onChange={(e) => setAdvertImageUrl(e.target.value)}
+                  placeholder="e.g. https://picsum.photos/seed/promo/600/400"
+                  className="h-12 rounded-2xl border-2 font-mono text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Target Route Link</Label>
+                  <Input
+                    value={advertTargetUrl}
+                    onChange={(e) => setAdvertTargetUrl(e.target.value)}
+                    placeholder="e.g. /services"
+                    className="h-12 rounded-2xl border-2 font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Promo Code (Optional)</Label>
+                  <Input
+                    value={advertPromoCode}
+                    onChange={(e) => setAdvertPromoCode(e.target.value)}
+                    placeholder="e.g. DEMAND50"
+                    className="h-12 rounded-2xl border-2 font-mono font-bold text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+
+          <SheetFooter className="p-8 border-t bg-muted/5">
+            <Button
+              onClick={handleSaveAdvert}
+              disabled={isSavingAdvert}
+              className="w-full h-14 rounded-2xl font-black text-sm bg-primary uppercase shadow-lg shadow-primary/20 gap-2"
+            >
+              {isSavingAdvert ? <Loader2 className="h-5 w-5 animate-spin" /> : <Megaphone className="h-5 w-5" />}
+              {editingAdvert ? "Save Campaign Changes" : "Publish Advert Campaign"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       {/* Role Confirmation Sheet */}
       <Sheet open={isUpdatingRole} onOpenChange={setIsUpdatingRole}>
@@ -1630,6 +2990,288 @@ export default function SuperAdminPage() {
             >
               {isUpdatingKycStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Approve Corporate KYC
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* APPROVE FUNDING DIALOG */}
+      <Dialog open={isApproveDialogOpen} onOpenChange={(open) => {
+        setIsApproveDialogOpen(open);
+        if (!open) {
+          setMonnifyVerifyData(null);
+          setMonnifyMatchReport(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-lg rounded-[2.5rem] border-2 shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2 text-green-700">
+              <CheckCircle2 className="h-5 w-5" /> Authorize Wallet Funding
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold">
+              Cross-reference payment reference with Monnify gateway account before crediting user ledger.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedFundingRequest && (
+            <div className="space-y-4 py-3">
+              <div className="bg-muted/40 p-4 rounded-2xl border space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-muted-foreground uppercase text-[10px]">Partner User:</span>
+                  <span className="font-black">{selectedFundingRequest.userName || 'COD User'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-muted-foreground uppercase text-[10px]">Email Address:</span>
+                  <span className="font-mono font-medium">{selectedFundingRequest.userEmail}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-muted-foreground uppercase text-[10px]">Payment Reference:</span>
+                  <span className="font-mono font-bold text-primary">{selectedFundingRequest.reference}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <span className="font-black text-xs uppercase">Amount to Credit:</span>
+                  <span className="font-black text-lg text-green-700">₦{Number(selectedFundingRequest.amount || 0).toLocaleString()}</span>
+                </div>
+              </div>
+
+              {/* Monnify Gateway Matching Telemetry Box */}
+              <div className="p-4 rounded-2xl border-2 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-black text-xs uppercase text-blue-900 dark:text-blue-200">
+                    <ShieldCheck className="h-4 w-4 text-blue-600" /> Monnify Gateway Match Check
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleLiveVerifyMonnify(selectedFundingRequest)}
+                    disabled={isVerifyingMonnifyRef}
+                    className="h-7 px-2.5 text-[10px] font-black uppercase rounded-lg border-blue-300 text-blue-700 hover:bg-blue-100"
+                  >
+                    {isVerifyingMonnifyRef ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                    )}
+                    {monnifyVerifyData ? 'Re-Query Gateway' : 'Audit Match Now'}
+                  </Button>
+                </div>
+
+                {monnifyVerifyData ? (
+                  <div className="space-y-2 text-[11px] pt-1">
+                    <div className="grid grid-cols-2 gap-2 bg-background/80 p-2.5 rounded-xl border">
+                      <div>
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase block">Gateway Status:</span>
+                        <Badge className={cn(
+                          "text-[9px] font-black uppercase mt-0.5",
+                          monnifyVerifyData.paymentStatus === 'PAID' || monnifyVerifyData.status === 'SUCCESS'
+                            ? "bg-green-600 text-white"
+                            : "bg-amber-600 text-white"
+                        )}>
+                          {monnifyVerifyData.paymentStatus || monnifyVerifyData.status || 'PAID'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase block">Settled on Gateway:</span>
+                        <span className="font-mono font-black text-xs text-foreground block mt-0.5">
+                          ₦{Number(monnifyVerifyData.amountPaid || monnifyVerifyData.amount || selectedFundingRequest.amount).toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase block">Merchant Contract:</span>
+                        <span className="font-mono font-bold text-[10px] text-muted-foreground block truncate">
+                          {monnifyVerifyData.contractCode || '730430763017'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase block">Payment Channel:</span>
+                        <span className="font-bold text-[10px] block truncate">
+                          {monnifyVerifyData.paymentMethod || 'Monnify Direct'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {monnifyMatchReport?.isMatched ? (
+                      <div className="flex items-center gap-2 p-2 rounded-xl bg-green-100 dark:bg-green-950/40 border border-green-300 text-green-800 dark:text-green-300 text-[11px] font-bold">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                        <span>Verified: Transaction matches Monnify account records and settled amount.</span>
+                      </div>
+                    ) : monnifyMatchReport?.discrepancies?.length ? (
+                      <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-950/40 border border-amber-300 text-amber-800 dark:text-amber-300 text-[10px] space-y-1 font-semibold">
+                        <div className="flex items-center gap-1 font-black">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" /> Discrepancy Alert:
+                        </div>
+                        {monnifyMatchReport.discrepancies.map((d: string, i: number) => (
+                          <div key={i} className="pl-4">• {d}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Click &apos;Audit Match Now&apos; to verify that Monnify received the exact settlement into your merchant contract account before authorizing.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase text-muted-foreground">Internal Approval Notes (Optional)</Label>
+                <Input
+                  value={approvalNote}
+                  onChange={(e) => setApprovalNote(e.target.value)}
+                  placeholder="e.g. Verified against Monnify Settlement Portal"
+                  className="h-10 rounded-xl border-2 font-medium text-xs"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsApproveDialogOpen(false)}
+              disabled={isApprovingFunding}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleApproveFunding(selectedFundingRequest)}
+              disabled={isApprovingFunding}
+              className="rounded-xl font-black text-xs uppercase bg-green-600 hover:bg-green-700 text-white gap-2 shadow-sm"
+            >
+              {isApprovingFunding ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Confirm & Credit Balance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* REJECT FUNDING DIALOG */}
+      <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-2 shadow-2xl p-6">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2 text-red-700">
+              <XCircle className="h-5 w-5" /> Decline Funding Request
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold">
+              Declining will mark this funding request as rejected. The user&apos;s wallet balance will NOT be credited.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedFundingRequest && (
+            <div className="space-y-4 py-3">
+              <div className="bg-red-50/60 p-4 rounded-2xl border border-red-200 space-y-2 text-xs text-red-950">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-red-800 uppercase text-[10px]">Reference:</span>
+                  <span className="font-mono font-black">{selectedFundingRequest.reference}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-red-800 uppercase text-[10px]">Requested Amount:</span>
+                  <span className="font-black">₦{Number(selectedFundingRequest.amount || 0).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase text-muted-foreground">Reason for Decline / Audit Record</Label>
+                <Input
+                  value={rejectionReasonInput}
+                  onChange={(e) => setRejectionReasonInput(e.target.value)}
+                  placeholder="e.g. Unsettled Monnify transaction or duplicate submission"
+                  className="h-10 rounded-xl border-2 font-medium text-xs"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsRejectDialogOpen(false)}
+              disabled={isRejectingFunding}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleRejectFunding(selectedFundingRequest)}
+              disabled={isRejectingFunding}
+              className="rounded-xl font-black text-xs uppercase bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm"
+            >
+              {isRejectingFunding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+              Confirm Decline
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MANUAL CREDIT MODAL */}
+      <Dialog open={isManualCreditOpen} onOpenChange={setIsManualCreditOpen}>
+        <DialogContent className="sm:max-w-lg rounded-[2.5rem] border-2 shadow-2xl p-6">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2">
+              <WalletIcon className="h-5 w-5 text-primary" /> Manual User Wallet Credit
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold">
+              Directly credit a customer or partner wallet with full administrative auditing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black uppercase text-muted-foreground">Select Recipient Partner / User</Label>
+              <Select value={manualCreditUserId} onValueChange={setManualCreditUserId}>
+                <SelectTrigger className="h-11 rounded-xl border-2 font-semibold text-xs">
+                  <SelectValue placeholder="Choose a registered user..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 rounded-xl">
+                  {platformUsers?.map((u: any) => (
+                    <SelectItem key={u.id} value={u.id} className="text-xs font-medium py-2">
+                      <span className="font-black">{u.firstName} {u.lastName}</span> &bull; <span className="text-muted-foreground font-mono text-[10px]">{u.email}</span> ({u.role || 'User'})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black uppercase text-muted-foreground">Credit Amount (₦ NGN)</Label>
+              <Input
+                type="number"
+                value={manualCreditAmount}
+                onChange={(e) => setManualCreditAmount(e.target.value)}
+                placeholder="e.g. 5000"
+                className="h-11 rounded-xl border-2 font-black text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black uppercase text-muted-foreground">Administrative Reason / Justification</Label>
+              <Input
+                value={manualCreditReason}
+                onChange={(e) => setManualCreditReason(e.target.value)}
+                placeholder="e.g. Promotional grant, Dispute resolution, Direct cash receipt"
+                className="h-11 rounded-xl border-2 font-medium text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsManualCreditOpen(false)}
+              disabled={isProcessingManualCredit}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleExecuteManualCredit}
+              disabled={isProcessingManualCredit || !manualCreditUserId || !manualCreditAmount}
+              className="rounded-xl font-black text-xs uppercase bg-primary hover:bg-primary/90 text-white gap-2 shadow-sm"
+            >
+              {isProcessingManualCredit ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Authorize & Credit ₦{Number(manualCreditAmount || 0).toLocaleString()}
             </Button>
           </DialogFooter>
         </DialogContent>

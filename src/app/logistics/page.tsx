@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect, useRef } from "react"
 import Image from "next/image"
 import { motion } from "motion/react"
-import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -64,7 +63,28 @@ const PRIORITY_MAP: Record<string, number> = {
   'Low': 1
 };
 
-const API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
+const STATE_DISTRICTS: Record<string, string[]> = {
+  "Lagos": ["Ikeja", "Lekki Phase 1", "Victoria Island", "Ikoyi", "Yaba", "Surulere", "Ikorodu", "Festac Town", "Alaba", "Maryland", "Ajah", "Oshodi", "Agege"],
+  "Abuja": ["Central Business District", "Maitama", "Wuse 2", "Garki", "Jabi", "Utako", "Gwarinpa", "Asokoro", "Kubwa", "Lugbe", "Apo"],
+  "Rivers": ["Port Harcourt GRA", "Trans-Amadi", "Diobu", "Rumuokoro", "Woji", "Eleme", "Choba", "Borokiri"],
+  "Oyo": ["Bodija", "Dugbe", "Ring Road", "Iwo Road", "UI / Agbowo", "Jericho", "Oluyole", "Moniya"],
+  "Kano": ["Kano Municipal", "Nassarawa", "Fagge", "Dala", "Tarauni", "Sabon Gari"],
+  "Enugu": ["Independence Layout", "New Haven", "GRA Enugu", "Ogui", "Abakpa", "Emene"],
+  "Anambra": ["Onitsha Main Market", "Awka GRA", "Nnewi", "Fegge", "Nkpor"],
+  "Edo": ["GRA Benin", "Ugbowo", "Ring Road Benin", "Ikpoba Hill", "Aduwawa"],
+  "Ogun": ["Abeokuta GRA", "Ibara", "Sagamu", "Ota / Sango", "Ijebu Ode", "Mowe / Ibafo"],
+  "Delta": ["Warri GRA", "Asaba Central", "Effurun", "Sapele", "Ughelli"],
+  "Kaduna": ["Kaduna North", "Barnawa", "Kakuri", "Tudun Wada", "Ungwan Rimi"]
+};
+
+const NIGERIAN_STATES = [
+  "Lagos", "Abuja", "Rivers", "Kano", "Oyo", "Enugu", "Delta", "Kaduna", "Anambra", "Edo", 
+  "Ogun", "Plateau", "Akwa Ibom", "Imo", "Bauchi", "Benue", "Borno", "Cross River", "Ebonyi", 
+  "Ekiti", "Gombe", "Jigawa", "Katsina", "Kebbi", "Kogi", "Kwara", "Nasarawa", "Niger", 
+  "Ondo", "Osun", "Sokoto", "Taraba", "Yobe", "Zamfara", "Abia", "Adamawa", "Bayelsa"
+].sort();
+
+const API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(API_KEY) && API_KEY !== 'YOUR_API_KEY';
 
 function ConsignmentStatusBadge({ status, className }: { status: string; className?: string }) {
@@ -150,12 +170,28 @@ export default function LogisticsHub() {
   const [receiverName, setReceiverName] = useState("")
   const [receiverPhone, setReceiverPhone] = useState("")
   const [receiverAddress, setReceiverAddress] = useState("")
-  const [originState, setOriginState] = useState("")
-  const [destState, setDestState] = useState("")
+  const [originState, setOriginState] = useState("Lagos")
+  const [originArea, setOriginArea] = useState("Ikeja")
+  const [destState, setDestState] = useState("Lagos")
+  const [destArea, setDestArea] = useState("Lekki Phase 1")
   const [packageType, setPackageType] = useState("")
-  const [weight, setWeight] = useState("")
+  const [weight, setWeight] = useState("2.5")
   const [serviceLevel, setServiceLevel] = useState<"Intra-State" | "Inter-State">("Intra-State")
   const [priority, setPriority] = useState<"Low" | "Medium" | "High">("Medium")
+
+  // Errand Dispatch States
+  const [errandCategory, setErrandCategory] = useState<string>("Personal Runner")
+  const [errandServiceLevel, setErrandServiceLevel] = useState<"Intra-State" | "Inter-State">("Intra-State")
+  const [errandOriginState, setErrandOriginState] = useState("Lagos")
+  const [errandDestState, setErrandDestState] = useState("Lagos")
+  const [errandPickupArea, setErrandPickupArea] = useState("Ikeja")
+  const [errandDropoffArea, setErrandDropoffArea] = useState("Victoria Island")
+  const [errandPickupAddress, setErrandPickupAddress] = useState("")
+  const [errandDropoffAddress, setErrandDropoffAddress] = useState("")
+  const [errandInstructions, setErrandInstructions] = useState("")
+  const [errandRecipientName, setErrandRecipientName] = useState("")
+  const [errandRecipientPhone, setErrandRecipientPhone] = useState("")
+  const [errandUrgency, setErrandUrgency] = useState<"Standard" | "Express">("Standard")
 
   const [copiedTrackId, setCopiedTrackId] = useState<string | null>(null)
   const [origin, setOrigin] = useState<string>("")
@@ -167,13 +203,23 @@ export default function LogisticsHub() {
     }
     setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
     
-    // Auto-extract deep tracking link if present in URL (?track=... or ?id=...)
+    // Auto-extract deep tracking link or tab if present in URL (?track=... or ?id=... or ?tab=...)
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search)
       const urlTrackId = params.get("track") || params.get("id") || params.get("trackId")
       if (urlTrackId && urlTrackId.trim()) {
         setDirectTrackId(urlTrackId.trim())
         setActiveTab("tracking")
+      }
+      const urlTab = params.get("tab")
+      if (urlTab) {
+        if (urlTab === "shipping" || urlTab === "new-shipment") {
+          setActiveTab("new-shipment")
+        } else if (urlTab === "errand" || urlTab === "errands") {
+          setActiveTab("errand")
+        } else if (urlTab === "tracking" || urlTab === "track") {
+          setActiveTab("tracking")
+        }
       }
     }
 
@@ -345,20 +391,155 @@ export default function LogisticsHub() {
   }, [shipments, searchQuery, statusFilter, typeFilter, dateRange]);
 
   const estimatedShippingCost = useMemo(() => {
-    const base = serviceLevel === "Inter-State" ? 5000 : 2500;
-    const weightFactor = Number(weight) * 200;
-    return base + (weightFactor || 0);
-  }, [serviceLevel, weight]);
+    const isIntra = serviceLevel === "Intra-State";
+    const base = isIntra ? 2500 : 5000;
+    const perKgRate = isIntra ? 150 : 350;
+    const weightFactor = (Number(weight) || 0) * perKgRate;
+    const prioritySurcharge = priority === "High" ? 1500 : priority === "Low" ? -300 : 0;
+    return Math.max(1500, Math.round(base + weightFactor + prioritySurcharge));
+  }, [serviceLevel, weight, priority]);
 
-  const nigerianStates = ["Lagos", "Abuja", "Rivers", "Kano", "Oyo", "Enugu", "Delta", "Kaduna", "Anambra", "Edo", "Ogun", "Plateau", "Akwa Ibom", "Imo", "Bauchi", "Benue", "Borno", "Cross River", "Ebonyi", "Ekiti", "Gombe", "Jigawa", "Katsina", "Kebbi", "Kogi", "Kwara", "Nasarawa", "Niger", "Ondo", "Osun", "Sokoto", "Taraba", "Yobe", "Zamfara", "Abia", "Adamawa", "Bayelsa"].sort();
+  const estimatedErrandCost = useMemo(() => {
+    const isIntra = errandServiceLevel === "Intra-State";
+    const base = isIntra ? 2500 : 6500;
+    const urgencyFee = errandUrgency === "Express" ? (isIntra ? 1500 : 2500) : 0;
+    return base + urgencyFee;
+  }, [errandServiceLevel, errandUrgency]);
+
+  const nigerianStates = NIGERIAN_STATES;
+
+  // Sync state for intra-state mode
+  const handleServiceLevelChange = (level: "Intra-State" | "Inter-State") => {
+    setServiceLevel(level);
+    if (level === "Intra-State") {
+      setDestState(originState);
+    } else {
+      if (destState === originState) {
+        setDestState(originState === "Abuja" ? "Lagos" : "Abuja");
+      }
+    }
+  };
+
+  const handleOriginStateChange = (state: string) => {
+    setOriginState(state);
+    if (serviceLevel === "Intra-State") {
+      setDestState(state);
+      const districts = STATE_DISTRICTS[state] || [];
+      if (districts.length > 0) {
+        setOriginArea(districts[0]);
+        setDestArea(districts[1] || districts[0]);
+      }
+    }
+  };
+
+  const handleErrandServiceLevelChange = (level: "Intra-State" | "Inter-State") => {
+    setErrandServiceLevel(level);
+    if (level === "Intra-State") {
+      setErrandDestState(errandOriginState);
+    } else {
+      if (errandDestState === errandOriginState) {
+        setErrandDestState(errandOriginState === "Abuja" ? "Lagos" : "Abuja");
+      }
+    }
+  };
+
+  const handleErrandOriginStateChange = (state: string) => {
+    setErrandOriginState(state);
+    if (errandServiceLevel === "Intra-State") {
+      setErrandDestState(state);
+      const districts = STATE_DISTRICTS[state] || [];
+      if (districts.length > 0) {
+        setErrandPickupArea(districts[0]);
+        setErrandDropoffArea(districts[1] || districts[0]);
+      }
+    }
+  };
+
+  const handleRequestErrand = () => {
+    const isIntra = errandServiceLevel === "Intra-State";
+    const effectiveDestState = isIntra ? errandOriginState : errandDestState;
+
+    if (!user || !firestore || !errandOriginState || !effectiveDestState || !wallet || !errandRecipientName || !errandRecipientPhone || !errandPickupAddress || !errandDropoffAddress || !errandInstructions) {
+      toast({ title: "Incomplete Errand Details", description: "Please provide pickup/dropoff addresses, instructions, and recipient contact.", variant: "destructive" });
+      return;
+    }
+    if (wallet.balance < estimatedErrandCost) {
+      toast({ title: "Insufficient Balance", description: "Please top up your wallet to authorize this errand runner.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    
+    const newBalance = wallet.balance - estimatedErrandCost;
+    setDocumentNonBlocking(walletRef!, { balance: newBalance }, { merge: true });
+
+    // Derive explicit origin and destination coordinates
+    const pickupLocString = isIntra && errandPickupArea ? `${errandPickupAddress}, ${errandPickupArea}, ${errandOriginState}` : `${errandPickupAddress}, ${errandOriginState}`;
+    const dropoffLocString = isIntra && errandDropoffArea ? `${errandDropoffAddress}, ${errandDropoffArea}, ${effectiveDestState}` : `${errandDropoffAddress}, ${effectiveDestState}`;
+
+    const originCoords = resolveCoordinates(null, pickupLocString, { lat: 6.5244, lng: 3.3792 });
+    const destinationCoords = resolveCoordinates(null, dropoffLocString, { lat: 9.0765, lng: 7.3986 });
+    
+    const errandData: any = { 
+      status: 'Pending Approval', 
+      serviceType: isIntra ? 'State Errand' : 'National Errand', 
+      serviceScope: errandServiceLevel,
+      locationUnit: profile?.assignedUnit || 'General', 
+      origin: pickupLocString, 
+      originState: errandOriginState,
+      originArea: errandPickupArea || '',
+      destination: dropoffLocString, 
+      destState: effectiveDestState,
+      destArea: errandDropoffArea || '',
+      originCoords,
+      destinationCoords,
+      originLat: originCoords.lat,
+      originLng: originCoords.lng,
+      destLat: destinationCoords.lat,
+      destLng: destinationCoords.lng,
+      customerUserId: user.uid, 
+      requesterEmail: user.email,
+      receiverName: errandRecipientName, 
+      receiverPhone: errandRecipientPhone, 
+      receiverAddress: errandDropoffAddress, 
+      createdAt: new Date().toISOString(), 
+      orderSummary: `${errandCategory}: ${errandInstructions.slice(0, 40)}... [${errandServiceLevel.toUpperCase()}]`,
+      notes: errandInstructions,
+      priority: errandUrgency === 'Express' ? 'High' : 'Medium',
+      estimatedCost: estimatedErrandCost,
+      totalAmount: estimatedErrandCost,
+      estimatedDeliveryWindow: isIntra ? '1 – 4 Hours (Local Intra-State Runner)' : '24 – 48 Hours (Inter-State Courier)',
+      statusHistory: [
+        {
+          status: 'Request Initialized',
+          timestamp: new Date().toISOString(),
+          note: `Errand Runner dispatched (${errandCategory} - ${errandServiceLevel} ${errandUrgency}).`,
+          operator: 'System'
+        }
+      ]
+    };
+    
+    addDocumentNonBlocking(collection(firestore, 'deliveryTasks'), errandData).then(() => {
+      toast({ title: "Errand Runner Dispatched!", description: `${errandServiceLevel} fulfillment confirmed.` });
+      setActiveTab("tracking");
+      // Reset errand form
+      setErrandPickupAddress("");
+      setErrandDropoffAddress("");
+      setErrandInstructions("");
+      setErrandRecipientName("");
+      setErrandRecipientPhone("");
+    }).finally(() => setLoading(false));
+  };
 
   const handleRequestShipping = () => {
-    if (!user || !firestore || !originState || !destState || !weight || !wallet || !receiverName || !receiverPhone || !receiverAddress) {
-      toast({ title: "Incomplete details", variant: "destructive" });
+    const isIntra = serviceLevel === "Intra-State";
+    const effectiveDestState = isIntra ? originState : destState;
+
+    if (!user || !firestore || !originState || !effectiveDestState || !weight || !wallet || !receiverName || !receiverPhone || !receiverAddress) {
+      toast({ title: "Incomplete details", description: "Please fill in weight, recipient details, and delivery address.", variant: "destructive" });
       return;
     }
     if (wallet.balance < estimatedShippingCost) {
-      toast({ title: "Insufficient Balance", variant: "destructive" });
+      toast({ title: "Insufficient Balance", description: "Please top up your wallet to authorize consignment fulfillment.", variant: "destructive" });
       return;
     }
     setLoading(true);
@@ -367,15 +548,23 @@ export default function LogisticsHub() {
     setDocumentNonBlocking(walletRef!, { balance: newBalance }, { merge: true });
 
     // Derive explicit origin and destination coordinates
-    const originCoords = resolveCoordinates(null, originState, { lat: 6.5244, lng: 3.3792 });
-    const destinationCoords = resolveCoordinates(null, destState || receiverAddress, { lat: 9.0765, lng: 7.3986 });
+    const originLocString = isIntra && originArea ? `${originArea}, ${originState}` : originState;
+    const destLocString = isIntra && destArea ? `${receiverAddress}, ${destArea}, ${effectiveDestState}` : `${receiverAddress}, ${effectiveDestState}`;
+
+    const originCoords = resolveCoordinates(null, originLocString, { lat: 6.5244, lng: 3.3792 });
+    const destinationCoords = resolveCoordinates(null, destLocString, { lat: 9.0765, lng: 7.3986 });
     
     const shipmentData: any = { 
       status: 'Pending Approval', 
-      serviceType: serviceLevel === 'Intra-State' ? 'State Shipping' : 'National Shipping', 
+      serviceType: isIntra ? 'State Shipping' : 'National Shipping', 
+      serviceScope: serviceLevel,
       locationUnit: profile?.assignedUnit || 'General', 
-      origin: originState, 
-      destination: `${receiverAddress}, ${destState}`, 
+      origin: originLocString, 
+      originState: originState,
+      originArea: originArea || '',
+      destination: destLocString, 
+      destState: effectiveDestState,
+      destArea: destArea || '',
       originCoords,
       destinationCoords,
       originLat: originCoords.lat,
@@ -388,14 +577,15 @@ export default function LogisticsHub() {
       receiverPhone, 
       receiverAddress, 
       createdAt: new Date().toISOString(), 
-      orderSummary: `${packageType || 'Goods'} (${weight}kg)`,
+      orderSummary: `${packageType || 'Goods'} (${weight}kg) • [${serviceLevel.toUpperCase()}]`,
       estimatedCost: estimatedShippingCost,
       totalAmount: estimatedShippingCost,
+      estimatedDeliveryWindow: isIntra ? '4 – 12 Hours (Same-Day Express)' : '24 – 48 Hours (Interstate Corridor)',
       statusHistory: [
         {
           status: 'Request Initialized',
           timestamp: new Date().toISOString(),
-          note: 'Consignment request submitted by customer.',
+          note: `Consignment authorized for ${serviceLevel} fulfillment (${isIntra ? 'Same-Day / Local' : 'Interstate Network'}).`,
           operator: 'System'
         }
       ]
@@ -406,7 +596,7 @@ export default function LogisticsHub() {
     }
     
     addDocumentNonBlocking(collection(firestore, 'deliveryTasks'), shipmentData).then(() => {
-      toast({ title: "Consignment Fulfillment Authorized!", description: "Awaiting Agent verification." });
+      toast({ title: "Consignment Fulfillment Authorized!", description: `${serviceLevel} dispatch registered. Awaiting agent assignment.` });
       setActiveTab("tracking");
       // Reset form
       setWeight("");
@@ -418,28 +608,8 @@ export default function LogisticsHub() {
 
   if (!mounted) return null;
 
-  if (!hasValidKey) {
-    return (
-      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',fontFamily:'sans-serif'}}>
-        <div style={{textAlign:'center',maxWidth:520}}>
-          <h2>Google Maps API Key Required</h2>
-          <p><strong>Step 1:</strong> <a href="https://console.cloud.google.com/google/maps-apis/start?utm_campaign=gmp-code-assist-ais" target="_blank" rel="noopener">Get an API Key</a></p>
-          <p><strong>Step 2:</strong> Add your key as a secret in AI Studio:</p>
-          <ul style={{textAlign:'left',lineHeight:'1.8'}}>
-            <li>Open <strong>Settings</strong> (⚙️ gear icon, <strong>top-right corner</strong>)</li>
-            <li>Select <strong>Secrets</strong></li>
-            <li>Type <code>GOOGLE_MAPS_PLATFORM_KEY</code> as the secret name, press <strong>Enter</strong></li>
-            <li>Paste your API key as the value, press <strong>Enter</strong></li>
-          </ul>
-          <p>The app rebuilds automatically after you add the secret.</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <APIProvider apiKey={API_KEY} version="weekly">
-      <div className="space-y-6 pb-20 max-w-xl mx-auto px-2">
+    <div className="space-y-6 pb-20 max-w-xl mx-auto px-2">
       <div className="flex justify-between items-center px-2 py-2 no-print">
         <div className="flex items-center gap-2">
           <h2 className="text-xl font-black tracking-tighter flex items-center gap-2">
@@ -537,7 +707,7 @@ export default function LogisticsHub() {
                     <SelectValue placeholder="Service Type" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
-                    {["All", "State Shipping", "National Shipping", "Marketplace", "Errand", "Food", "Laundry"].map(t => (
+                    {["All", "State Shipping", "National Shipping", "State Errand", "National Errand", "Errand Runner", "Marketplace", "Food", "Laundry"].map(t => (
                       <SelectItem key={t} value={t} className="text-[9px] font-black uppercase">{t}</SelectItem>
                     ))}
                   </SelectContent>
@@ -582,118 +752,139 @@ export default function LogisticsHub() {
             {isLoading ? (
               <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
             ) : filteredShipments.length > 0 ? (
-              filteredShipments.map(shipment => (
-                <Card key={shipment.id} className="p-4 border-none shadow-sm hover:shadow-md transition-all cursor-pointer group rounded-2xl bg-white" onClick={() => setSelectedShipment(shipment)}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-3 items-center">
-                      <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shadow-inner", shipment.status === 'Delivered' ? "bg-green-100 text-green-600" : "bg-primary/10 text-primary")}>
-                        <Package className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-black text-xs uppercase tracking-tight">{shipment.id.slice(0, 8)}</p>
-                          <ConsignmentStatusBadge status={shipment.status} />
-                          <Badge className={cn(
-                            "text-[7px] font-black uppercase h-4 px-1.5 border-none",
-                            shipment.priority === 'High' ? "bg-red-600 text-white" : 
-                            shipment.priority === 'Low' ? "bg-blue-400 text-white" : "bg-gray-500 text-white"
-                          )}>
-                            {shipment.priority || 'Medium'}
-                          </Badge>
+              filteredShipments.map(shipment => {
+                const isIntra = shipment.serviceScope === "Intra-State" || 
+                  shipment.serviceType === "State Shipping" || 
+                  shipment.serviceType === "State Errand" ||
+                  (shipment.origin && shipment.destination && (
+                    shipment.origin.toLowerCase().includes("lagos") && shipment.destination.toLowerCase().includes("lagos") ||
+                    shipment.origin.toLowerCase().includes("abuja") && shipment.destination.toLowerCase().includes("abuja") ||
+                    shipment.origin.toLowerCase().includes("rivers") && shipment.destination.toLowerCase().includes("rivers") ||
+                    shipment.origin.toLowerCase().includes("kano") && shipment.destination.toLowerCase().includes("kano") ||
+                    shipment.origin.toLowerCase().includes("oyo") && shipment.destination.toLowerCase().includes("oyo")
+                  ));
+
+                return (
+                  <Card key={shipment.id} className="p-4 border-none shadow-sm hover:shadow-md transition-all cursor-pointer group rounded-2xl bg-white" onClick={() => setSelectedShipment(shipment)}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-3 items-center">
+                        <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shadow-inner", shipment.status === 'Delivered' ? "bg-green-100 text-green-600" : "bg-primary/10 text-primary")}>
+                          <Package className="h-5 w-5" />
                         </div>
-                        <p className="text-[9px] text-muted-foreground mt-0.5 truncate max-w-[180px] font-medium">{shipment.destination || 'Hub Target'}</p>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-black text-xs uppercase tracking-tight">{shipment.id.slice(0, 8)}</p>
+                            <ConsignmentStatusBadge status={shipment.status} />
+                            <Badge className={cn(
+                              "text-[7px] font-black uppercase h-4 px-1.5 border-none",
+                              isIntra ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"
+                            )}>
+                              {isIntra ? "Intra-State" : "Inter-State"}
+                            </Badge>
+                            <Badge className={cn(
+                              "text-[7px] font-black uppercase h-4 px-1.5 border-none",
+                              shipment.priority === 'High' ? "bg-red-600 text-white" : 
+                              shipment.priority === 'Low' ? "bg-blue-400 text-white" : "bg-gray-500 text-white"
+                            )}>
+                              {shipment.priority || 'Medium'}
+                            </Badge>
+                          </div>
+                          <p className="text-[9px] text-muted-foreground mt-0.5 truncate max-w-[240px] font-medium">
+                            <span className="font-bold text-slate-700">{shipment.origin || 'Node'}</span> ➔ <span className="font-bold text-primary">{shipment.destination || 'Hub Target'}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 rounded-full opacity-60 hover:opacity-100 transition-all bg-muted/30 hover:bg-primary/10 hover:text-primary shrink-0" 
+                          title="Share Tracking Link"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleShareTrackingLink(shipment)
+                          }}
+                        >
+                          <Share2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 rounded-full opacity-40 hover:opacity-100 transition-opacity bg-muted/30 shrink-0" 
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <History className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72 p-5 rounded-[2rem] border-2 shadow-2xl z-[100]" onClick={(e) => e.stopPropagation()}>
+                            <div className="space-y-5">
+                              <div className="flex items-center justify-between border-b pb-3 border-dashed">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Dispatch Log</h4>
+                                <p className="text-[8px] font-black text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{shipment.id.slice(0, 8)}</p>
+                              </div>
+                              <div className="space-y-5 relative pl-4 before:absolute before:left-1 before:top-1 before:bottom-1 before:w-[2px] before:bg-muted-foreground/10 before:rounded-full">
+                                {(shipment.statusHistory || []).slice().reverse().map((log: any, lidx: number) => (
+                                  <div key={lidx} className="relative group/log">
+                                    <div className={cn(
+                                      "absolute -left-[17.5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 bg-white transition-all", 
+                                      lidx === 0 ? "border-primary bg-primary scale-110" : "border-muted-foreground/30"
+                                    )} />
+                                    <p className={cn("text-[10px] font-black uppercase leading-none mb-1", lidx === 0 ? "text-primary" : "text-foreground")}>
+                                      {log.status}
+                                    </p>
+                                    <div className="flex items-center gap-2 opacity-60">
+                                      <Clock className="h-2 w-2" />
+                                      <p className="text-[8px] text-muted-foreground font-black uppercase">
+                                        {new Date(log.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                      </p>
+                                    </div>
+                                    {log.note && (
+                                      <p className="text-[10px] text-muted-foreground/70 font-medium italic mt-1.5 leading-tight bg-muted/30 p-2 rounded-lg border border-muted/20">
+                                        &quot;{log.note}&quot;
+                                      </p>
+                                    )}
+                                    <p className="text-[7px] font-black uppercase text-muted-foreground/40 mt-1 tracking-tighter">Verified by {log.operator || "Auto-Dispatch"}</p>
+                                  </div>
+                                ))}
+                                {(!shipment.statusHistory || shipment.statusHistory.length === 0) && (
+                                  <div className="py-4 text-center">
+                                    <p className="text-[9px] text-muted-foreground font-bold uppercase opacity-30">No Logs Recorded</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-30" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 rounded-full opacity-60 hover:opacity-100 transition-all bg-muted/30 hover:bg-primary/10 hover:text-primary shrink-0" 
-                        title="Share Tracking Link"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleShareTrackingLink(shipment)
-                        }}
-                      >
-                        <Share2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 rounded-full opacity-40 hover:opacity-100 transition-opacity bg-muted/30 shrink-0" 
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <History className="h-4 w-4" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-72 p-5 rounded-[2rem] border-2 shadow-2xl z-[100]" onClick={(e) => e.stopPropagation()}>
-                          <div className="space-y-5">
-                            <div className="flex items-center justify-between border-b pb-3 border-dashed">
-                              <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Dispatch Log</h4>
-                              <p className="text-[8px] font-black text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{shipment.id.slice(0, 8)}</p>
-                            </div>
-                            <div className="space-y-5 relative pl-4 before:absolute before:left-1 before:top-1 before:bottom-1 before:w-[2px] before:bg-muted-foreground/10 before:rounded-full">
-                              {(shipment.statusHistory || []).slice().reverse().map((log: any, lidx: number) => (
-                                <div key={lidx} className="relative group/log">
-                                  <div className={cn(
-                                    "absolute -left-[17.5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 bg-white transition-all", 
-                                    lidx === 0 ? "border-primary bg-primary scale-110" : "border-muted-foreground/30"
-                                  )} />
-                                  <p className={cn("text-[10px] font-black uppercase leading-none mb-1", lidx === 0 ? "text-primary" : "text-foreground")}>
-                                    {log.status}
-                                  </p>
-                                  <div className="flex items-center gap-2 opacity-60">
-                                    <Clock className="h-2 w-2" />
-                                    <p className="text-[8px] text-muted-foreground font-black uppercase">
-                                      {new Date(log.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                                    </p>
-                                  </div>
-                                  {log.note && (
-                                    <p className="text-[10px] text-muted-foreground/70 font-medium italic mt-1.5 leading-tight bg-muted/30 p-2 rounded-lg border border-muted/20">
-                                      &quot;{log.note}&quot;
-                                    </p>
-                                  )}
-                                  <p className="text-[7px] font-black uppercase text-muted-foreground/40 mt-1 tracking-tighter">Verified by {log.operator || "Auto-Dispatch"}</p>
-                                </div>
-                              ))}
-                              {(!shipment.statusHistory || shipment.statusHistory.length === 0) && (
-                                <div className="py-4 text-center">
-                                  <p className="text-[9px] text-muted-foreground font-bold uppercase opacity-30">No Logs Recorded</p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-30" />
-                    </div>
-                  </div>
 
-                  {/* Compact Step-based Tracker */}
-                  <div className="mt-3 pt-3 border-t border-slate-100">
-                    <ConsignmentStepTracker 
-                      status={shipment.status} 
-                      statusHistory={shipment.statusHistory} 
-                      compact 
-                      className="p-3 bg-slate-50/50 rounded-xl"
-                    />
-                  </div>
-
-                  {/* Activity Preview Section */}
-                  {shipment.statusHistory && shipment.statusHistory.length > 0 && (
-                    <div className="mt-4 pt-3 border-t border-dashed flex items-center gap-2 overflow-hidden">
-                      <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />
-                      <p className="text-[9px] font-black uppercase text-muted-foreground truncate tracking-tight">
-                        Last Activity: <span className="text-foreground">{shipment.statusHistory[shipment.statusHistory.length - 1].status}</span>
-                        <span className="mx-2 opacity-20">|</span>
-                        <span className="font-medium italic opacity-70">&quot;{shipment.statusHistory[shipment.statusHistory.length - 1].note || 'Processing...'}&quot;</span>
-                      </p>
+                    {/* Compact Step-based Tracker */}
+                    <div className="mt-3 pt-3 border-t border-slate-100">
+                      <ConsignmentStepTracker 
+                        status={shipment.status} 
+                        statusHistory={shipment.statusHistory} 
+                        compact 
+                        className="p-3 bg-slate-50/50 rounded-xl"
+                      />
                     </div>
-                  )}
-                </Card>
-              ))
+
+                    {/* Activity Preview Section */}
+                    {shipment.statusHistory && shipment.statusHistory.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-dashed flex items-center gap-2 overflow-hidden">
+                        <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+                        <p className="text-[9px] font-black uppercase text-muted-foreground truncate tracking-tight">
+                          Last Activity: <span className="text-foreground">{shipment.statusHistory[shipment.statusHistory.length - 1].status}</span>
+                          <span className="mx-2 opacity-20">|</span>
+                          <span className="font-medium italic opacity-70">&quot;{shipment.statusHistory[shipment.statusHistory.length - 1].note || 'Processing...'}&quot;</span>
+                        </p>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })
             ) : (
               <div className="text-center py-24 border-2 border-dashed rounded-[2rem] opacity-30 font-black uppercase text-[10px]">Manifest Empty</div>
             )}
@@ -703,52 +894,216 @@ export default function LogisticsHub() {
         <TabsContent value="new-shipment">
           <Card className="border-none shadow-xl rounded-[2.5rem] overflow-hidden bg-white">
             <CardHeader className="p-8 pb-4">
-              <CardTitle className="text-xl font-black uppercase tracking-tighter">Consignment Protocol</CardTitle>
-              <CardDescription className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Regional Logistics Handshake</CardDescription>
+              <CardTitle className="text-xl font-black uppercase tracking-tighter flex items-center gap-2">
+                <Truck className="h-5 w-5 text-primary" /> Consignment Dispatch Protocol
+              </CardTitle>
+              <CardDescription className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                Intra-State Municipal &amp; Inter-State Regional Logistics Handshake
+              </CardDescription>
             </CardHeader>
             <CardContent className="px-8 pb-8 space-y-6">
+              {/* Corridor Scope Selector */}
+              <div className="space-y-2">
+                <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">
+                  Logistics Service Scope
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleServiceLevelChange("Intra-State")}
+                    className={cn(
+                      "p-3 rounded-2xl border-2 text-left transition-all flex flex-col justify-between",
+                      serviceLevel === "Intra-State"
+                        ? "border-emerald-600 bg-emerald-50/50 shadow-sm ring-1 ring-emerald-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-black uppercase text-emerald-700 tracking-tight">Intra-State</span>
+                      <Badge className="bg-emerald-600 text-white text-[7px] font-black uppercase h-4 px-1.5 border-none">Local</Badge>
+                    </div>
+                    <p className="text-[9px] text-slate-500 font-medium">Within same state • 4-12h Express</p>
+                    <p className="text-[10px] font-black text-emerald-800 mt-1">From ₦2,500</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleServiceLevelChange("Inter-State")}
+                    className={cn(
+                      "p-3 rounded-2xl border-2 text-left transition-all flex flex-col justify-between",
+                      serviceLevel === "Inter-State"
+                        ? "border-blue-600 bg-blue-50/50 shadow-sm ring-1 ring-blue-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-black uppercase text-blue-700 tracking-tight">Inter-State</span>
+                      <Badge className="bg-blue-600 text-white text-[7px] font-black uppercase h-4 px-1.5 border-none">Transit</Badge>
+                    </div>
+                    <p className="text-[9px] text-slate-500 font-medium">Cross-country corridor • 24-48h</p>
+                    <p className="text-[10px] font-black text-blue-800 mt-1">From ₦5,000</p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Package & Weight info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Scope</label>
-                  <div className="flex gap-1.5">
-                    <Button size="sm" variant={serviceLevel === "Intra-State" ? "default" : "outline"} className="flex-1 rounded-xl h-9 text-[9px] font-black uppercase" onClick={() => setServiceLevel("Intra-State")}>Intra</Button>
-                    <Button size="sm" variant={serviceLevel === "Inter-State" ? "default" : "outline"} className="flex-1 rounded-xl h-9 text-[9px] font-black uppercase" onClick={() => setServiceLevel("Inter-State")}>Inter</Button>
-                  </div>
+                  <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Package Type</label>
+                  <Input 
+                    placeholder="e.g. Documents, Electronics, Apparel..." 
+                    value={packageType} 
+                    onChange={(e) => setPackageType(e.target.value)} 
+                    className="h-10 rounded-xl border-2 text-xs font-bold" 
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Weight (KG)</label>
-                  <Input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0.0" className="h-9 rounded-xl border-2 text-xs font-black" />
+                  <Input 
+                    type="number" 
+                    step="0.5"
+                    min="0.1"
+                    value={weight} 
+                    onChange={(e) => setWeight(e.target.value)} 
+                    placeholder="2.5" 
+                    className="h-10 rounded-xl border-2 text-xs font-black" 
+                  />
                 </div>
               </div>
+
               {profile?.role === 'Admin' && (
                 <div className="space-y-1.5">
-                  <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Priority</label>
+                  <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Priority SLA</label>
                   <Select value={priority} onValueChange={(val: any) => setPriority(val)}>
-                    <SelectTrigger className="h-9 rounded-xl border-2 text-xs font-black"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-10 rounded-xl border-2 text-xs font-black"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-xl">
-                      <SelectItem value="Low" className="text-xs font-black">Low</SelectItem>
-                      <SelectItem value="Medium" className="text-xs font-black">Medium</SelectItem>
-                      <SelectItem value="High" className="text-xs font-black text-red-600">High</SelectItem>
+                      <SelectItem value="Low" className="text-xs font-black">Low Priority (-₦300)</SelectItem>
+                      <SelectItem value="Medium" className="text-xs font-black">Standard Priority</SelectItem>
+                      <SelectItem value="High" className="text-xs font-black text-red-600">High / Express (+₦1,500)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div className="space-y-1.5">
-                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Origin State</label>
-                  <Select value={originState} onValueChange={setOriginState}>
-                    <SelectTrigger className="h-10 rounded-xl border-2 text-xs font-bold"><SelectValue placeholder="Origin" /></SelectTrigger>
-                    <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
-                  </Select>
+
+              {/* State & Corridor routing logic */}
+              {serviceLevel === "Intra-State" ? (
+                <div className="space-y-4 p-4 rounded-2xl bg-emerald-50/40 border border-emerald-200">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] font-black uppercase text-emerald-800 tracking-widest ml-1">State Location (Local Corridor)</label>
+                      <span className="text-[8px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Within Same State</span>
+                    </div>
+                    <Select value={originState} onValueChange={handleOriginStateChange}>
+                      <SelectTrigger className="h-10 rounded-xl border-2 border-emerald-300 bg-white text-xs font-bold"><SelectValue placeholder="Select State" /></SelectTrigger>
+                      <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Intra-State District selections */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Pickup Area / Municipal District</label>
+                      <Input 
+                        placeholder="e.g. Ikeja, Central Business District..." 
+                        value={originArea} 
+                        onChange={(e) => setOriginArea(e.target.value)} 
+                        className="h-10 rounded-xl border-2 bg-white text-xs font-bold" 
+                      />
+                      {STATE_DISTRICTS[originState] && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {STATE_DISTRICTS[originState].slice(0, 4).map(d => (
+                            <button 
+                              key={d} 
+                              type="button" 
+                              onClick={() => setOriginArea(d)} 
+                              className={cn(
+                                "text-[7.5px] font-black uppercase px-2 py-0.5 rounded-md border transition-all",
+                                originArea === d ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
+                              )}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Dropoff Area / Municipal District</label>
+                      <Input 
+                        placeholder="e.g. Lekki Phase 1, Garki, Bodija..." 
+                        value={destArea} 
+                        onChange={(e) => setDestArea(e.target.value)} 
+                        className="h-10 rounded-xl border-2 bg-white text-xs font-bold" 
+                      />
+                      {STATE_DISTRICTS[originState] && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {STATE_DISTRICTS[originState].slice(0, 4).map(d => (
+                            <button 
+                              key={d} 
+                              type="button" 
+                              onClick={() => setDestArea(d)} 
+                              className={cn(
+                                "text-[7.5px] font-black uppercase px-2 py-0.5 rounded-md border transition-all",
+                                destArea === d ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
+                              )}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Destination State</label>
-                  <Select value={destState} onValueChange={setDestState}>
-                    <SelectTrigger className="h-10 rounded-xl border-2 text-xs font-bold"><SelectValue placeholder="Target" /></SelectTrigger>
-                    <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
-                  </Select>
+              ) : (
+                <div className="space-y-4 p-4 rounded-2xl bg-blue-50/40 border border-blue-200">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-blue-800 ml-1">Origin State</label>
+                      <Select value={originState} onValueChange={setOriginState}>
+                        <SelectTrigger className="h-10 rounded-xl border-2 border-blue-300 bg-white text-xs font-bold"><SelectValue placeholder="Origin" /></SelectTrigger>
+                        <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-blue-800 ml-1">Destination State</label>
+                      <Select value={destState} onValueChange={setDestState}>
+                        <SelectTrigger className="h-10 rounded-xl border-2 border-blue-300 bg-white text-xs font-bold"><SelectValue placeholder="Target" /></SelectTrigger>
+                        <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {originState === destState && (
+                    <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-2">
+                      <span className="text-[9px] text-amber-800 font-bold">
+                        Notice: Origin and destination are the same. Switch to Intra-State mode for discounted local rates!
+                      </span>
+                    </div>
+                  )}
                 </div>
+              )}
+
+              {/* Live Route Corridor Map Preview */}
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between px-1">
+                  <label className="text-[9px] font-black uppercase text-primary tracking-widest flex items-center gap-1.5">
+                    <MapPin className="h-3 w-3" /> Live Corridor Route Preview
+                  </label>
+                  <span className="text-[9px] text-muted-foreground font-mono font-bold">
+                    {serviceLevel === "Intra-State" ? "Intra-State Local Corridor" : "Inter-State Transit Network"}
+                  </span>
+                </div>
+                <RealMap 
+                  origin={serviceLevel === "Intra-State" && originArea ? `${originArea}, ${originState}` : originState} 
+                  destination={serviceLevel === "Intra-State" && destArea ? `${destArea}, ${destState}` : destState} 
+                  status="Route Planning" 
+                  height="240px"
+                  title={serviceLevel === "Intra-State" ? `Local Corridor: ${originArea || originState} ➔ ${destArea || destState}` : `Interstate Corridor: ${originState} ➔ ${destState}`}
+                />
               </div>
+
+              {/* Receiver Info */}
               <div className="space-y-5 pt-6 border-t border-dashed">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -761,18 +1116,224 @@ export default function LogisticsHub() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Full Delivery Address</label>
-                  <Textarea placeholder="House number, street, landmark details..." value={receiverAddress} onChange={(e) => setReceiverAddress(e.target.value)} className="min-h-[80px] rounded-2xl border-2 text-xs font-medium" />
+                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Full Delivery Address &amp; Landmarks</label>
+                  <Textarea placeholder="House / Office number, street name, landmark, gate instructions..." value={receiverAddress} onChange={(e) => setReceiverAddress(e.target.value)} className="min-h-[80px] rounded-2xl border-2 text-xs font-medium" />
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="bg-muted/10 p-8 flex flex-col gap-4 border-t">
+              {/* Transparent Cost Breakdown */}
+              <div className="w-full bg-white p-4 rounded-2xl border space-y-2">
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="font-bold text-slate-600">Base {serviceLevel} Fare</span>
+                  <span className="font-black text-slate-800">₦{serviceLevel === "Intra-State" ? "2,500" : "5,000"}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="font-bold text-slate-600">Weight Surcharge ({weight || 0}kg @ ₦{serviceLevel === "Intra-State" ? "150" : "350"}/kg)</span>
+                  <span className="font-black text-slate-800">₦{Math.round((Number(weight) || 0) * (serviceLevel === "Intra-State" ? 150 : 350)).toLocaleString()}</span>
+                </div>
+                {priority !== "Medium" && (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="font-bold text-slate-600">Priority Surcharge ({priority})</span>
+                    <span className="font-black text-slate-800">{priority === "High" ? "+₦1,500" : "-₦300"}</span>
+                  </div>
+                )}
+                <div className="pt-2 border-t flex justify-between items-center">
+                  <div>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Estimated Delivery SLA</p>
+                    <p className="text-[10px] font-black text-emerald-700">{serviceLevel === "Intra-State" ? "4 – 12 Hours (Same-Day Express)" : "24 – 48 Hours (Interstate Highway)"}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Total Cost</p>
+                    <p className="text-2xl font-black text-primary tracking-tighter">₦{estimatedShippingCost.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              <Button size="lg" className="w-full h-16 font-black rounded-2xl shadow-xl uppercase text-sm bg-primary hover:bg-primary/90 transition-all" onClick={handleRequestShipping} disabled={loading || !weight || !originState || !receiverName || !receiverAddress}>
+                {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : `Authorize ${serviceLevel} Fulfillment`}
+              </Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="errand">
+          <Card className="border-none shadow-xl rounded-[2.5rem] overflow-hidden bg-white">
+            <CardHeader className="p-8 pb-4">
+              <CardTitle className="text-xl font-black uppercase tracking-tighter flex items-center gap-2">
+                <Zap className="h-5 w-5 text-amber-500" /> On-Demand Errand Runner
+              </CardTitle>
+              <CardDescription className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                Point-to-Point Task, Shopping &amp; Parcel Dispatch Service
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-8 pb-8 space-y-6">
+              {/* Errand Scope Selector */}
+              <div className="space-y-2">
+                <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">
+                  Errand Service Scope
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleErrandServiceLevelChange("Intra-State")}
+                    className={cn(
+                      "p-3 rounded-2xl border-2 text-left transition-all flex flex-col justify-between",
+                      errandServiceLevel === "Intra-State"
+                        ? "border-emerald-600 bg-emerald-50/50 shadow-sm ring-1 ring-emerald-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-black uppercase text-emerald-700 tracking-tight">Intra-State Runner</span>
+                      <Badge className="bg-emerald-600 text-white text-[7px] font-black uppercase h-4 px-1.5 border-none">Local</Badge>
+                    </div>
+                    <p className="text-[9px] text-slate-500 font-medium">City-wide runner • 1-4h SLA</p>
+                    <p className="text-[10px] font-black text-emerald-800 mt-1">From ₦2,500</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleErrandServiceLevelChange("Inter-State")}
+                    className={cn(
+                      "p-3 rounded-2xl border-2 text-left transition-all flex flex-col justify-between",
+                      errandServiceLevel === "Inter-State"
+                        ? "border-blue-600 bg-blue-50/50 shadow-sm ring-1 ring-blue-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-black uppercase text-blue-700 tracking-tight">Inter-State Courier</span>
+                      <Badge className="bg-blue-600 text-white text-[7px] font-black uppercase h-4 px-1.5 border-none">Transit</Badge>
+                    </div>
+                    <p className="text-[9px] text-slate-500 font-medium">Cross-state handover • 24-48h</p>
+                    <p className="text-[10px] font-black text-blue-800 mt-1">From ₦6,500</p>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Errand Category</label>
+                  <Select value={errandCategory} onValueChange={setErrandCategory}>
+                    <SelectTrigger className="h-10 rounded-xl border-2 text-xs font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="Personal Runner" className="text-xs font-bold">Personal Runner</SelectItem>
+                      <SelectItem value="Document Delivery" className="text-xs font-bold">Document &amp; File Handover</SelectItem>
+                      <SelectItem value="Market / Grocery" className="text-xs font-bold">Market / Grocery Shopping</SelectItem>
+                      <SelectItem value="Pharmacy & Meds" className="text-xs font-bold">Pharmacy &amp; Prescription</SelectItem>
+                      <SelectItem value="Custom Pickup" className="text-xs font-bold">Custom Item Pickup</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Speed / Urgency</label>
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant={errandUrgency === "Standard" ? "default" : "outline"} className="flex-1 rounded-xl h-10 text-[9px] font-black uppercase" onClick={() => setErrandUrgency("Standard")}>Standard</Button>
+                    <Button size="sm" variant={errandUrgency === "Express" ? "default" : "outline"} className="flex-1 rounded-xl h-10 text-[9px] font-black uppercase text-red-600 border-red-200" onClick={() => setErrandUrgency("Express")}>⚡ Express</Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Errand Geographic Inputs */}
+              {errandServiceLevel === "Intra-State" ? (
+                <div className="space-y-4 p-4 rounded-2xl bg-emerald-50/40 border border-emerald-200">
+                  <div className="space-y-1.5">
+                    <label className="text-[8px] font-black uppercase text-emerald-800 ml-1">State Location</label>
+                    <Select value={errandOriginState} onValueChange={handleErrandOriginStateChange}>
+                      <SelectTrigger className="h-10 rounded-xl border-2 border-emerald-300 bg-white text-xs font-bold"><SelectValue placeholder="Pickup State" /></SelectTrigger>
+                      <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Pickup Area / LGA</label>
+                      <Input placeholder="e.g. Ikeja, Victoria Island..." value={errandPickupArea} onChange={(e) => setErrandPickupArea(e.target.value)} className="h-10 rounded-xl border-2 bg-white text-xs font-bold" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Dropoff Area / LGA</label>
+                      <Input placeholder="e.g. Lekki, Yaba, Garki..." value={errandDropoffArea} onChange={(e) => setErrandDropoffArea(e.target.value)} className="h-10 rounded-xl border-2 bg-white text-xs font-bold" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 p-4 rounded-2xl bg-blue-50/40 border border-blue-200">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-blue-800 ml-1">Pickup State</label>
+                      <Select value={errandOriginState} onValueChange={setErrandOriginState}>
+                        <SelectTrigger className="h-10 rounded-xl border-2 border-blue-300 bg-white text-xs font-bold"><SelectValue placeholder="Pickup State" /></SelectTrigger>
+                        <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] font-black uppercase text-blue-800 ml-1">Dropoff State</label>
+                      <Select value={errandDestState} onValueChange={setErrandDestState}>
+                        <SelectTrigger className="h-10 rounded-xl border-2 border-blue-300 bg-white text-xs font-bold"><SelectValue placeholder="Dropoff State" /></SelectTrigger>
+                        <SelectContent className="max-h-60 rounded-xl">{nigerianStates.map(s => <SelectItem key={s} value={s} className="text-xs font-bold">{s}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Pickup Address / Landmark</label>
+                  <Input placeholder="Shop 4, Balogun Market or Home Address..." value={errandPickupAddress} onChange={(e) => setErrandPickupAddress(e.target.value)} className="h-10 rounded-xl border-2 text-xs font-bold" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Dropoff Address / Landmark</label>
+                  <Input placeholder="Plot 12, Victoria Island or Office..." value={errandDropoffAddress} onChange={(e) => setErrandDropoffAddress(e.target.value)} className="h-10 rounded-xl border-2 text-xs font-bold" />
+                </div>
+              </div>
+
+              {/* Errand Live Route Corridor Map Preview */}
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between px-1">
+                  <label className="text-[9px] font-black uppercase text-primary tracking-widest flex items-center gap-1.5">
+                    <MapPin className="h-3 w-3" /> Live Errand Runner Corridor Map
+                  </label>
+                  <span className="text-[9px] text-muted-foreground font-mono font-bold">
+                    {errandServiceLevel === "Intra-State" ? "Intra-State Runner" : "Inter-State Transit Corridor"}
+                  </span>
+                </div>
+                <RealMap 
+                  origin={errandServiceLevel === "Intra-State" && errandPickupArea ? `${errandPickupArea}, ${errandOriginState}` : (errandPickupAddress ? `${errandPickupAddress}, ${errandOriginState}` : errandOriginState)} 
+                  destination={errandServiceLevel === "Intra-State" && errandDropoffArea ? `${errandDropoffArea}, ${errandDestState}` : (errandDropoffAddress ? `${errandDropoffAddress}, ${errandDestState}` : errandDestState)} 
+                  status="Errand Corridor" 
+                  height="240px"
+                  title={`Runner Route: ${errandOriginState} ➔ ${errandDestState}`}
+                />
+              </div>
+
+              <div className="space-y-1.5 pt-2">
+                <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Detailed Task Instructions for Runner</label>
+                <Textarea placeholder="Describe what the runner should purchase, collect, verify, or deliver in detail..." value={errandInstructions} onChange={(e) => setErrandInstructions(e.target.value)} className="min-h-[80px] rounded-2xl border-2 text-xs font-medium" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-dashed">
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Recipient / Contact Name</label>
+                  <Input placeholder="Jane Doe" value={errandRecipientName} onChange={(e) => setErrandRecipientName(e.target.value)} className="h-10 rounded-xl border-2 text-xs font-bold" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Recipient / Contact Phone</label>
+                  <Input placeholder="080..." value={errandRecipientPhone} onChange={(e) => setErrandRecipientPhone(e.target.value)} className="h-10 rounded-xl border-2 text-xs font-black tracking-widest" />
                 </div>
               </div>
             </CardContent>
             <CardFooter className="bg-muted/10 p-8 flex flex-col gap-4 border-t">
               <div className="flex justify-between w-full items-center">
-                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Estimated Cost</p>
-                <p className="text-3xl font-black text-primary tracking-tighter">₦{estimatedShippingCost.toLocaleString()}</p>
+                <div>
+                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Errand Service Fee ({errandServiceLevel})</p>
+                  <p className="text-[9px] text-muted-foreground">{errandServiceLevel === "Intra-State" ? "1-4 Hours Local Runner SLA" : "24-48 Hours Cross-State Transit SLA"}</p>
+                </div>
+                <p className="text-3xl font-black text-primary tracking-tighter">₦{estimatedErrandCost.toLocaleString()}</p>
               </div>
-              <Button size="lg" className="w-full h-16 font-black rounded-2xl shadow-xl uppercase text-sm bg-primary hover:bg-primary/90 transition-all" onClick={handleRequestShipping} disabled={loading || !weight || !originState || !destState || !receiverName || !receiverAddress}>
-                {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize Fulfillment"}
+              <Button size="lg" className="w-full h-16 font-black rounded-2xl shadow-xl uppercase text-sm bg-primary hover:bg-primary/90 transition-all" onClick={handleRequestErrand} disabled={loading || !errandOriginState || !errandPickupAddress || !errandDropoffAddress || !errandInstructions || !errandRecipientName || !errandRecipientPhone}>
+                {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : `Authorize ${errandServiceLevel} Runner Dispatch`}
               </Button>
             </CardFooter>
           </Card>
@@ -918,24 +1479,44 @@ export default function LogisticsHub() {
                 </div>
 
                 <div className="bg-muted/30 p-8 rounded-[2.5rem] border-4 border-dashed space-y-6 shadow-inner">
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Target Endpoint</p>
-                    <p className="text-sm font-bold leading-tight">{activeSelectedShipment.destination}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Service Scope</p>
+                      <Badge className={cn(
+                        "text-[9px] font-black uppercase px-2.5 py-1 border-none",
+                        activeSelectedShipment.serviceScope === "Intra-State" || activeSelectedShipment.serviceType?.includes("State") 
+                          ? "bg-emerald-600 text-white" 
+                          : "bg-blue-600 text-white"
+                      )}>
+                        {activeSelectedShipment.serviceScope || (activeSelectedShipment.serviceType?.includes("National") ? "Inter-State" : "Intra-State")} Corridor
+                      </Badge>
+                    </div>
+                    <div className="space-y-1.5 text-right">
+                      <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Priority</p>
+                      <Badge className={cn(
+                        "text-[10px] font-black uppercase h-6 px-3 rounded-lg border-none",
+                        activeSelectedShipment.priority === 'High' ? "bg-red-600 text-white" : 
+                        activeSelectedShipment.priority === 'Low' ? "bg-blue-400 text-white" : "bg-gray-500 text-white"
+                      )}>
+                        {activeSelectedShipment.priority || 'Medium'}
+                      </Badge>
+                    </div>
                   </div>
+
                   <div className="space-y-1.5">
                     <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Origin Point</p>
                     <p className="text-sm font-bold leading-tight">{activeSelectedShipment.origin || "Processing Node"}</p>
                   </div>
                   <div className="space-y-1.5">
-                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Priority</p>
-                    <Badge className={cn(
-                      "text-[10px] font-black uppercase h-6 px-3 rounded-lg border-none",
-                      activeSelectedShipment.priority === 'High' ? "bg-red-600 text-white" : 
-                      activeSelectedShipment.priority === 'Low' ? "bg-blue-400 text-white" : "bg-gray-500 text-white"
-                    )}>
-                      {activeSelectedShipment.priority || 'Medium'}
-                    </Badge>
+                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Target Endpoint</p>
+                    <p className="text-sm font-bold leading-tight">{activeSelectedShipment.destination}</p>
                   </div>
+                  {activeSelectedShipment.estimatedDeliveryWindow && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Transit SLA Window</p>
+                      <p className="text-xs font-black text-emerald-700">{activeSelectedShipment.estimatedDeliveryWindow}</p>
+                    </div>
+                  )}
                   {activeSelectedShipment.packageImageUrl && (
                     <div className="space-y-1.5 pt-2">
                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Manifest Image</p>
@@ -1034,6 +1615,5 @@ export default function LogisticsHub() {
         </SheetContent>
       </Sheet>
     </div>
-  </APIProvider>
   )
 }

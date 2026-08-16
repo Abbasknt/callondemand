@@ -13,6 +13,8 @@ import {
   ArrowDownLeft, 
   ArrowUpRight, 
   Shield, 
+  ShieldCheck,
+  ShieldAlert,
   Loader2, 
   Landmark, 
   CheckCircle2,
@@ -34,10 +36,12 @@ import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import { useBalanceVisibility } from "@/hooks/use-balance-visibility"
 import { initMonnifyTransaction, getReservedAccount, searchTransactions, disburseFunds } from "@/actions/monnify"
+import { submitFundingRequest } from "@/actions/wallet-funding"
 import { sendTwoFactorCode, verifyTwoFactorCode } from "@/actions/auth-2fa"
 import { triggerReceiptPrint, exportToCsv, shareReceipt } from "@/lib/export-utils"
-import { RefreshCw, RotateCcw } from "lucide-react"
+import { RefreshCw, RotateCcw, Clock, AlertCircle } from "lucide-react"
 import { BrandLogo } from "@/components/brand-logo"
+import { TransactionIcon, TransactionCategoryBadge } from "@/components/transaction-icon"
 
 /**
  * @fileOverview Hardened Wallet Hub for Call on Demand.
@@ -101,7 +105,6 @@ export default function WalletPage() {
       }
 
       const txColRef = collection(firestore, 'users', user.uid, 'wallet', 'default', 'transactions');
-      const walletDocRef = doc(firestore, 'users', user.uid, 'wallet', 'default');
       
       let updatedCount = 0;
 
@@ -111,22 +114,20 @@ export default function WalletPage() {
         const snap = await getDocs(q);
 
         if (snap.empty) {
-          // New transaction found! Credit wallet.
+          // New transaction found! Submit for Admin Approval (AUTO-CREDIT DISABLED)
           const amount = Number(tx.amount);
           
-          updateDocumentNonBlocking(walletDocRef, {
-            balance: increment(amount),
-            lastSyncAt: new Date().toISOString()
-          });
-
-          addDocumentNonBlocking(txColRef, {
-            type: 'Deposit',
+          await submitFundingRequest({
+            userId: user.uid,
+            userEmail: user.email || 'customer@call-on-demand.com',
+            userName: user.displayName || 'COD User',
             amount: amount,
-            description: `Auto-Credit: ${tx.paymentMethod || 'Bank Transfer'}`,
-            transactionDate: tx.completedOn || new Date().toISOString(),
-            status: 'Completed',
             reference: tx.paymentReference,
-            gatewayId: tx.transactionReference || tx.paymentReference
+            gatewayId: tx.transactionReference || tx.paymentReference,
+            paymentMethod: tx.paymentMethod || 'Bank Transfer',
+            paidOn: tx.completedOn || new Date().toISOString(),
+            gatewayVerified: true,
+            gatewayStatus: 'PAID'
           });
           
           updatedCount++;
@@ -135,9 +136,9 @@ export default function WalletPage() {
 
       if (updatedCount > 0) {
         toast({ 
-          title: "Wallet Updated", 
-          description: `Successfully credited ${updatedCount} new settlement(s).`,
-          className: "bg-green-600 text-white"
+          title: "Deposit Queued for Clearance", 
+          description: `${updatedCount} Monnify payment(s) detected and submitted for Admin approval.`,
+          className: "bg-amber-600 text-white"
         });
       } else if (!silent) {
         toast({ title: "Ledger Up to Date" });
@@ -158,8 +159,8 @@ export default function WalletPage() {
   }, [user, mounted, handleSyncWallet]);
 
   const paymentMethods = [
-    { id: 'card', name: 'Credit/Debit Card', icon: CreditCard, desc: 'Instant via Monnify' },
-    { id: 'bank', name: 'Bank Transfer', icon: Landmark, desc: 'Static Virtual Account' },
+    { id: 'card', name: 'Monnify Checkout', icon: CreditCard, desc: 'Card, USSD & Online Bank via Monnify' },
+    { id: 'bank', name: 'Monnify Dedicated Account', icon: Landmark, desc: 'Instant Bank Transfer via Monnify' },
   ]
 
   const profileRef = useMemoFirebase(() => {
@@ -185,6 +186,10 @@ export default function WalletPage() {
   }, [firestore, user]);
 
   const { data: transactions, isLoading: isTxLoading } = useCollection(transactionsQuery);
+
+  const pendingFundsAmount = transactions
+    ?.filter((tx: any) => tx.type === 'Deposit' && (tx.status === 'Pending Approval' || tx.status === 'Pending'))
+    ?.reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0) || 0;
 
   const handleDeposit = async () => {
     if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) < 100) {
@@ -232,13 +237,31 @@ export default function WalletPage() {
   const [isVerifyingWithdrawal, setIsVerifyingWithdrawal] = useState(false)
 
   const handleWithdrawInitiate = async () => {
-    if (!withdrawAmount || isNaN(Number(withdrawAmount)) || Number(withdrawAmount) < 1000) {
-      toast({ title: "Min ₦1,000 required for withdrawal", variant: "destructive" });
+    const amount = Number(withdrawAmount);
+    if (!withdrawAmount || isNaN(amount) || amount < 100) {
+      toast({ title: "Min ₦100 required for withdrawal", variant: "destructive" });
       return;
     }
-    if (Number(withdrawAmount) > (wallet?.balance || 0)) {
+    if (amount > (wallet?.balance || 0)) {
        toast({ title: "Insufficient Balance", variant: "destructive" });
        return;
+    }
+
+    // Check KYC status & max transaction limit
+    const cleanNin = profile?.nin ? String(profile.nin).replace(/\D/g, '').trim() : '';
+    const cleanBvn = profile?.bvn ? String(profile.bvn).replace(/\D/g, '').trim() : '';
+    const isKycVerified = profile?.kycStatus === 'Verified' || profile?.kycTier === 'Tier 2' || (cleanNin.length === 11 && cleanBvn.length === 11);
+    const maxLimit = isKycVerified ? 5000000 : 50000;
+
+    if (amount > maxLimit) {
+      toast({
+        title: "Transaction Limit Exceeded",
+        description: isKycVerified 
+          ? "Single withdrawal cannot exceed Tier 2 max limit of ₦5,000,000."
+          : "Unverified accounts (Tier 1) are limited to ₦50,000 per transaction. Please complete NIN & BVN verification in Settings to upgrade to Tier 2 (₦5,000,000 Limit).",
+        variant: "destructive"
+      });
+      return;
     }
 
     if (profile?.twoFactorEnabled) {
@@ -246,13 +269,13 @@ export default function WalletPage() {
       const res = await sendTwoFactorCode(user?.email || '', profile.twoFactorMethod || 'email');
       if (res.success) {
         setShowWithdrawDialog(true);
-        toast({ title: "Security Handshake", description: res.message });
+        toast({ title: "Security Verification", description: res.message });
       } else {
         toast({ title: "Security Protocol Error", description: res.message, variant: "destructive" });
       }
       setIsWithdrawing(false);
     } else {
-      // Direct withdrawal if 2FA off (not recommended but allowed)
+      // Direct withdrawal if 2FA off
       await processWithdrawal();
     }
   };
@@ -264,13 +287,21 @@ export default function WalletPage() {
       const amount = Number(withdrawAmount);
       const reference = `WDR-${Date.now()}`;
       
+      const cleanNin = profile?.nin ? String(profile.nin).replace(/\D/g, '').trim() : '';
+      const cleanBvn = profile?.bvn ? String(profile.bvn).replace(/\D/g, '').trim() : '';
+      const isKycVerified = profile?.kycStatus === 'Verified' || profile?.kycTier === 'Tier 2' || (cleanNin.length === 11 && cleanBvn.length === 11);
+
       const disbRes = await disburseFunds({
         amount,
         reference,
         narration: `Call on Demand Wallet Withdrawal - ${user.displayName || user.email}`,
         destinationBankCode: profile?.bankCode || '058',
-        destinationAccountNumber: profile?.bankAccountNumber || '0123456789',
-        destinationAccountName: profile?.bankAccountName || user.displayName || 'Verified Account'
+        destinationAccountNumber: profile?.accountNumber || profile?.bankAccountNumber || '0123456789',
+        destinationAccountName: profile?.accountName || profile?.bankAccountName || user.displayName || 'Verified Account',
+        userId: user.uid,
+        userNin: cleanNin,
+        userBvn: cleanBvn,
+        isKycVerified: isKycVerified
       });
 
       if (!disbRes || !disbRes.success) {
@@ -364,7 +395,7 @@ export default function WalletPage() {
       <div className="flex justify-between items-center px-2 py-2 no-print">
         <div>
           <h2 className="text-xl font-black tracking-tighter flex items-center gap-2">
-            <Wallet className="h-6 w-6 text-primary" /> Wallet Hub
+            <Wallet className="h-6 w-6 text-primary" /> COD Wallet
           </h2>
           <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest opacity-60">Verified Settlement Ledger</p>
         </div>
@@ -380,34 +411,53 @@ export default function WalletPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-[10px] font-black uppercase tracking-widest opacity-80 flex items-center gap-2">
-                  <Shield className="h-3 w-3" /> Unified Balance
+                  <Shield className="h-3 w-3" /> COD Wallet Balance
                 </CardTitle>
-                <button 
-                  className="text-white/60 hover:text-white transition-colors p-1" 
-                  onClick={toggleShowBalance}
-                  title={showBalance ? "Hide balance" : "View balance"}
-                >
-                  {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-                <button 
-                  className={cn("text-white/60 hover:text-white transition-colors ml-2 p-1", isSyncing && "animate-spin")} 
-                  onClick={() => handleSyncWallet()}
-                  disabled={isSyncing}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button 
+                    className="text-white/60 hover:text-white transition-colors p-1" 
+                    onClick={toggleShowBalance}
+                    title={showBalance ? "Hide balance" : "View balance"}
+                  >
+                    {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                  <button 
+                    className={cn("text-white/60 hover:text-white transition-colors p-1", isSyncing && "animate-spin")} 
+                    onClick={() => handleSyncWallet()}
+                    disabled={isSyncing}
+                    title="Refresh wallet"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-4xl font-black mb-6 tracking-tighter">
+              <div className="text-4xl font-black mb-4 tracking-tighter">
                 {isWalletLoading ? <Loader2 className="animate-spin h-8 w-8" /> : formatBalance(wallet?.balance)}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="bg-white/10 border-none text-white px-3 py-1 text-[8px] font-black tracking-widest uppercase">NGN HUB</Badge>
                 <Badge variant="outline" className="bg-white/10 border-none text-white px-3 py-1 font-mono text-[8px]">AC: **** {profile?.phoneNumber?.slice(-4) || 'AUTH'}</Badge>
+                {pendingFundsAmount > 0 && (
+                  <Badge variant="outline" className="bg-amber-400/20 text-amber-200 border-amber-400/30 px-3 py-1 text-[8px] font-black uppercase flex items-center gap-1">
+                    <Clock className="h-3 w-3 animate-pulse" /> Pending Approval: ₦{pendingFundsAmount.toLocaleString()}
+                  </Badge>
+                )}
               </div>
             </CardContent>
           </Card>
+
+          {/* Security & Admin Approval Notification Banner */}
+          <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-4 flex items-start gap-3 text-amber-900 shadow-sm">
+            <Shield className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5 text-left">
+              <p className="text-[11px] font-black uppercase tracking-wider text-amber-950">Institutional Funding Security Active</p>
+              <p className="text-[10px] font-medium leading-relaxed text-amber-800">
+                To guarantee account protection, auto-crediting is disabled. All Monnify funding deposits are reviewed and authorized by an Administrator before your wallet balance is credited.
+              </p>
+            </div>
+          </div>
 
           <Card className="border-none shadow-lg rounded-[2.5rem] bg-card overflow-hidden">
             <CardHeader className="bg-muted/5 p-6 border-b">
@@ -478,7 +528,7 @@ export default function WalletPage() {
                         </div>
                         <div className="flex items-start gap-3 px-2">
                           <Lock className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                          <p className="text-[8px] font-bold uppercase text-muted-foreground leading-relaxed">Funds sent to this account are automatically credited to your wallet in real-time via the Monnify digital handshake.</p>
+                          <p className="text-[8px] font-bold uppercase text-muted-foreground leading-relaxed">Funds sent to this dedicated account are verified with Monnify and submitted to the Admin Security Clearance Hub for rapid authorization.</p>
                         </div>
                       </div>
                     ) : (
@@ -509,19 +559,49 @@ export default function WalletPage() {
                   </TabsContent>
 
                   <TabsContent value="withdraw" className="space-y-6 pt-2">
+                    {/* Bank Account Verification Status */}
                     <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex gap-3 text-red-700">
                       <Landmark className="h-5 w-5 shrink-0" />
                       <div>
                         <p className="font-black uppercase text-[10px]">Verified Bank Account Required</p>
                         <p className="text-[9px] font-medium mt-1 leading-relaxed">
                           Withdrawals are only processed to your verified bank account in Settings. 
-                          {profile?.bankAccountVerified && <span className="block mt-1 font-black">Connected: {profile.bankName} ({profile.accountNumber})</span>}
+                          {profile?.bankAccountVerified && <span className="block mt-1 font-black text-red-800">Connected: {profile.bankName} ({profile.accountNumber})</span>}
                         </p>
                       </div>
                     </div>
 
+                    {/* KYC (NIN & BVN) Status */}
+                    {!(profile?.kycStatus === 'Verified' || profile?.kycTier === 'Tier 2' || (profile?.nin?.length === 11 && profile?.bvn?.length === 11)) ? (
+                      <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 flex gap-3 text-amber-800">
+                        <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                        <div className="space-y-1">
+                          <p className="font-black uppercase text-[10px] text-amber-900">Tier 1 Account — NIN & BVN Required for ₦5,000,000 Limit</p>
+                          <p className="text-[9px] font-medium leading-relaxed">
+                            Current Limit: <strong>₦50,000 per transaction</strong>. Complete 11-digit NIN and BVN identity verification in Settings to unlock Tier 2 limit (₦5,000,000).
+                          </p>
+                          <p className="text-[10px] font-black text-primary uppercase cursor-pointer hover:underline pt-1" onClick={() => router.push('/settings')}>
+                            Complete NIN & BVN Verification →
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-emerald-50 p-3.5 rounded-xl border border-emerald-200 flex items-center justify-between text-emerald-800">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                          <span className="text-[10px] font-black uppercase tracking-wider">Tier 2 KYC Verified (NIN & BVN Linked)</span>
+                        </div>
+                        <Badge className="bg-emerald-200 text-emerald-900 font-black text-[9px] uppercase border-none">₦5,000,000 Limit</Badge>
+                      </div>
+                    )}
+
                     <div className="space-y-1.5">
-                      <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest ml-1">Withdraw Amount (₦)</label>
+                      <div className="flex justify-between items-center ml-1">
+                        <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Withdraw Amount (₦)</label>
+                        <span className="text-[9px] font-bold text-muted-foreground">
+                          Max Single Tx: {(profile?.kycStatus === 'Verified' || profile?.kycTier === 'Tier 2' || (profile?.nin?.length === 11 && profile?.bvn?.length === 11)) ? '₦5,000,000' : '₦50,000'}
+                        </span>
+                      </div>
                       <div className="relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-2xl text-muted-foreground opacity-30">₦</span>
                         <Input 
@@ -532,7 +612,7 @@ export default function WalletPage() {
                           className="text-2xl h-14 font-black pl-10 text-red-600 rounded-xl border-2 focus:border-red-600 transition-all"
                         />
                       </div>
-                      <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Available: ₦{(wallet?.balance || 0).toLocaleString()}</p>
+                      <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest ml-1">Available Balance: {formatBalance(wallet?.balance)}</p>
                     </div>
 
                     <Button 
@@ -572,15 +652,23 @@ export default function WalletPage() {
                   transactions.map((tx) => (
                     <div key={tx.id} className="p-5 flex items-center justify-between hover:bg-muted/30 transition-colors group cursor-default">
                       <div className="flex items-center gap-4 min-w-0">
-                        <div className={cn(
-                          "h-10 w-10 rounded-xl flex items-center justify-center shadow-inner shrink-0",
-                          tx.type === 'Deposit' ? "bg-green-100 text-green-600" : "bg-primary/10 text-primary"
-                        )}>
-                          {tx.type === 'Deposit' ? <ArrowDownLeft className="h-5 w-5" /> : <ArrowUpRight className="h-5 w-5" />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-black leading-tight truncate uppercase">{tx.description}</p>
-                          <p className="text-[8px] text-muted-foreground font-black uppercase tracking-widest mt-0.5 opacity-60">
+                        <TransactionIcon tx={tx} size="sm" />
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-[11px] font-black leading-tight truncate uppercase">{tx.description}</p>
+                            <TransactionCategoryBadge tx={tx} showType={false} />
+                            {(tx.status === 'Pending Approval' || tx.status === 'Pending') && (
+                              <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                                <Clock className="h-2.5 w-2.5" /> Pending Admin Approval
+                              </span>
+                            )}
+                            {tx.status === 'Rejected' && (
+                              <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+                                Declined by Admin
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[8px] text-muted-foreground font-black uppercase tracking-widest opacity-60">
                             {mounted ? new Date(tx.transactionDate).toLocaleString() : '...'}
                           </p>
                         </div>
@@ -653,7 +741,7 @@ export default function WalletPage() {
               </div>
             </CardContent>
             <CardFooter className="bg-muted/30 p-4 justify-center">
-              <p className="text-[8px] font-black uppercase opacity-50">Handshake verified via {profile?.twoFactorMethod || 'email'}</p>
+              <p className="text-[8px] font-black uppercase opacity-50">Verified via {profile?.twoFactorMethod || 'email'}</p>
             </CardFooter>
           </Card>
         </div>
@@ -664,7 +752,7 @@ export default function WalletPage() {
         <div className="hidden print:block w-full max-w-md mx-auto p-10 space-y-10 border-4 border-dashed border-black receipt-view">
           <div className="receipt-header text-center">
             <BrandLogo iconOnly className="h-16 w-16 mx-auto mb-2" />
-            <h2 className="text-2xl font-black uppercase mt-4 tracking-tighter">Wallet Receipt</h2>
+            <h2 className="text-2xl font-black uppercase mt-4 tracking-tighter">COD Wallet Receipt</h2>
             <p className="text-[10px] font-bold text-muted-foreground uppercase">Authorization: Verified</p>
           </div>
           <div className="space-y-4 pt-6 text-left">

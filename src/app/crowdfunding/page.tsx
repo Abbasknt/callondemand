@@ -99,6 +99,8 @@ export default function CrowdfundingPage() {
     addDocumentNonBlocking(txColRef, {
       walletId: 'default',
       type: 'Payment',
+      category: 'crowdfunding',
+      serviceType: 'crowdfunding',
       amount: amount,
       description: `Backing Project: ${campaign.title}`,
       transactionDate: new Date().toISOString(),

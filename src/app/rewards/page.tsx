@@ -37,6 +37,32 @@ export default function RewardsPage() {
     setMounted(true)
   }, [])
 
+  const settingsRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'application_settings', 'global_settings');
+  }, [firestore]);
+  const { data: appSettings } = useDoc(settingsRef);
+
+  const questsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'reward_quests'), orderBy('createdAt', 'desc'));
+  }, [firestore]);
+  const { data: dbQuests } = useCollection(questsQuery);
+
+  const referralBonusAmount = appSettings?.referralBonusAmount ?? 500;
+  const nextTierPoints = appSettings?.goldTierPointsThreshold ?? 1000;
+  
+  const activeQuests = useMemo(() => {
+    if (dbQuests && dbQuests.length > 0) {
+      return dbQuests.filter(q => q.status !== 'Disabled');
+    }
+    return [
+      { id: 'q1', title: "First Wallet Top-up", reward: "₦ 200 Bonus", icon: "TrendingUp" },
+      { id: 'q2', title: "Weekly Laundry Booking", reward: "100 Points", icon: "Star" },
+      { id: 'q3', title: "Marketplace Feedback", reward: "50 Points", icon: "CheckCircle2" },
+    ];
+  }, [dbQuests]);
+
   const profileRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'users', user.uid);
@@ -75,7 +101,6 @@ export default function RewardsPage() {
     setTimeout(() => setIsCopying(false), 2000);
   };
 
-  const nextTierPoints = 1000;
   const progress = Math.min(100, (stats.totalPoints / nextTierPoints) * 100);
 
   return (
@@ -155,7 +180,7 @@ export default function RewardsPage() {
                 <CardTitle className="text-2xl font-black">Invite & Earn</CardTitle>
               </div>
               <CardDescription className="text-base font-medium">
-                Invite a friend to join Call on Demand.com and you&apos;ll both get a <strong>₦ 500</strong> bonus after their first successful transaction.
+                Invite a friend to join Call on Demand.com and you&apos;ll both get a <strong>₦ {referralBonusAmount.toLocaleString()}</strong> bonus after their first successful transaction.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-8 pt-0">
@@ -239,18 +264,14 @@ export default function RewardsPage() {
               <CardDescription className="text-accent-foreground/80 font-medium">Complete tasks to unlock instant bonuses.</CardDescription>
             </CardHeader>
             <CardContent className="p-0 space-y-4 relative z-10">
-              {[
-                { title: "First Wallet Top-up", reward: "₦ 200 Bonus", icon: TrendingUp },
-                { title: "Weekly Laundry Booking", reward: "100 Points", icon: Star },
-                { title: "Marketplace Feedback", reward: "50 Points", icon: CheckCircle2 },
-              ].map((way, i) => (
-                <div key={i} className="flex items-center gap-4 p-5 bg-white/10 rounded-2xl backdrop-blur-md border border-white/5 hover:bg-white/20 transition-all cursor-default">
+              {activeQuests.map((quest: any, i: number) => (
+                <div key={quest.id || i} className="flex items-center gap-4 p-5 bg-white/10 rounded-2xl backdrop-blur-md border border-white/5 hover:bg-white/20 transition-all cursor-default">
                   <div className="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center shadow-inner">
-                    <way.icon className="h-6 w-6" />
+                    <Star className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-black">{way.title}</p>
-                    <p className="text-[10px] opacity-70 font-bold uppercase tracking-widest mt-0.5">{way.reward}</p>
+                    <p className="text-sm font-black">{quest.title}</p>
+                    <p className="text-[10px] opacity-70 font-bold uppercase tracking-widest mt-0.5">{quest.reward}</p>
                   </div>
                 </div>
               ))}

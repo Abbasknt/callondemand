@@ -30,8 +30,11 @@ import {
   Upload,
   Clock,
   AlertCircle,
-  FileText
+  FileText,
+  Sun,
+  Sparkles
 } from "lucide-react"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { useUser, useFirestore, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
 import { updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -40,8 +43,10 @@ import { signOut } from "firebase/auth"
 import { useAuth } from "@/firebase"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { validateBankAccount, getBanks } from "@/actions/monnify"
+import { validateBankAccount, getBanks, verifyUserIdentityKyc } from "@/actions/monnify"
 import { sendTwoFactorCode, verifyTwoFactorCode } from "@/actions/auth-2fa"
+import { requestPushNotificationPermission, showLocalPushNotification, getPushSupportInfo } from "@/lib/push-notifications"
+import { InstallAppDialog } from "@/components/mobile-app-install-prompt"
 
 /**
  * @fileOverview Hardened Settings Hub for Call on Demand.
@@ -65,6 +70,11 @@ export default function SettingsPage() {
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [phone, setPhone] = useState("")
+
+  // Personal KYC NIN & BVN
+  const [nin, setNin] = useState("")
+  const [bvn, setBvn] = useState("")
+  const [isVerifyingPersonalKyc, setIsVerifyingPersonalKyc] = useState(false)
   
   // Bank details
   const [banks, setBanks] = useState<any[]>([])
@@ -92,6 +102,9 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default')
+  const [showInstallModal, setShowInstallModal] = useState(false)
+  const [isIOSUser, setIsIOSUser] = useState(false)
+  const [isStandaloneApp, setIsStandaloneApp] = useState(false)
 
   // Company KYC State
   const [businessName, setBusinessName] = useState("CALL ON DEMAND.COM LTD")
@@ -119,8 +132,11 @@ export default function SettingsPage() {
     };
     fetchBanks();
     
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotificationPermission(Notification.permission);
+    if (typeof window !== 'undefined') {
+      const info = getPushSupportInfo();
+      setIsIOSUser(info.isIOS);
+      setIsStandaloneApp(info.isStandalone);
+      setNotificationPermission(info.permission);
     }
   }, []);
 
@@ -129,6 +145,8 @@ export default function SettingsPage() {
       setFirstName(profile.firstName || "")
       setLastName(profile.lastName || "")
       setPhone(profile.phoneNumber || "")
+      setNin(profile.nin || "")
+      setBvn(profile.bvn || "")
       setBankName(profile.bankName || "")
       setAccountNumber(profile.accountNumber || "")
       setAccountName(profile.accountName || "")
@@ -162,12 +180,32 @@ export default function SettingsPage() {
   }, [profile]);
 
   const handleRequestPush = async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
-    if (permission === 'granted') {
+    const result = await requestPushNotificationPermission(user?.uid);
+    setNotificationPermission(result.permission);
+    if (result.granted) {
       handleNotificationUpdate('push', true);
-      toast({ title: "Alerts Authorized" });
+      toast({ title: "Push Notifications Enabled", description: "You will receive real-time alerts." });
+    } else if (result.needsHomeInstall) {
+      setShowInstallModal(true);
+      toast({ 
+        title: "iOS Home Screen Required", 
+        description: "Apple iOS requires adding Call on Demand to your Home Screen before Push Notifications can be authorized." 
+      });
+    } else {
+      toast({ title: "Permission Not Granted", description: result.error || "Please enable notifications in your browser settings.", variant: "destructive" });
+    }
+  };
+
+  const handleTestPush = async () => {
+    const sent = await showLocalPushNotification({
+      title: "Call on Demand Test Alert 🔔",
+      body: "Push notification system operational! Real-time alerts are active.",
+      url: "/settings"
+    });
+    if (sent) {
+      toast({ title: "Test Push Sent", description: "Check your device status bar / desktop alerts." });
+    } else {
+      toast({ title: "Push Notification Failed", description: "Ensure push permissions are granted in OS/browser.", variant: "destructive" });
     }
   };
 
@@ -203,6 +241,61 @@ export default function SettingsPage() {
       toast({ title: "Gateway Error", variant: "destructive" });
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const handleVerifyPersonalKyc = async () => {
+    const cleanNin = nin.replace(/\D/g, '').trim();
+    const cleanBvn = bvn.replace(/\D/g, '').trim();
+
+    if (cleanNin.length !== 11) {
+      toast({ title: "Invalid NIN", description: "National Identification Number must be exactly 11 digits.", variant: "destructive" });
+      return;
+    }
+    if (cleanBvn.length !== 11) {
+      toast({ title: "Invalid BVN", description: "Bank Verification Number must be exactly 11 digits.", variant: "destructive" });
+      return;
+    }
+
+    if (!user?.uid) {
+      toast({ title: "Authentication Error", description: "Please log in to verify KYC identity.", variant: "destructive" });
+      return;
+    }
+
+    setIsVerifyingPersonalKyc(true);
+    try {
+      const res = await verifyUserIdentityKyc({
+        userId: user.uid,
+        nin: cleanNin,
+        bvn: cleanBvn,
+        fullName: `${firstName} ${lastName}`.trim() || user.displayName || 'Account Holder'
+      });
+
+      if (res.success) {
+        toast({
+          title: "KYC Verified - Tier 2 Active",
+          description: res.message || "Identity confirmed. Transaction limit raised to ₦5,000,000."
+        });
+        if (profileRef) {
+          updateDocumentNonBlocking(profileRef, {
+            nin: cleanNin,
+            bvn: cleanBvn,
+            kycTier: 'Tier 2',
+            kycStatus: 'Verified',
+            kycVerifiedAt: new Date().toISOString()
+          });
+        }
+      } else {
+        toast({
+          title: "KYC Verification Failed",
+          description: res.error || "NIN and BVN identity validation failed.",
+          variant: "destructive"
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Identity Verification Error", description: err.message || "Failed to process KYC", variant: "destructive" });
+    } finally {
+      setIsVerifyingPersonalKyc(false);
     }
   };
 
@@ -401,11 +494,31 @@ export default function SettingsPage() {
         <Tabs defaultValue="profile" className="w-full">
           <TabsList className="mb-6 bg-muted/50 p-1 rounded-2xl h-12 flex-wrap h-auto gap-1 w-full overflow-x-auto no-scrollbar">
             <TabsTrigger value="profile" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><User className="h-4 w-4" /> Personal</TabsTrigger>
+            <TabsTrigger value="appearance" className="flex-1 min-w-[100px] gap-2 rounded-xl h-10 font-bold"><Sun className="h-4 w-4" /> Appearance</TabsTrigger>
             <TabsTrigger value="company" className="flex-1 min-w-[120px] gap-2 rounded-xl h-10 font-bold"><Building2 className="h-4 w-4" /> Company KYC</TabsTrigger>
             <TabsTrigger value="payout" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><Landmark className="h-4 w-4" /> Payouts</TabsTrigger>
             <TabsTrigger value="security" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><Lock className="h-4 w-4" /> Security</TabsTrigger>
             <TabsTrigger value="notifications" className="flex-1 min-w-[90px] gap-2 rounded-xl h-10 font-bold"><Bell className="h-4 w-4" /> Alerts</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="appearance" className="space-y-6">
+            <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card">
+              <CardHeader className="bg-muted/30 p-6 border-b">
+                <CardTitle className="text-lg font-black uppercase tracking-tighter flex items-center gap-2">
+                  <Sun className="h-5 w-5 text-primary" /> Display & Visual Theme
+                </CardTitle>
+                <CardDescription className="text-xs font-medium">
+                  Select your preferred color theme for enhanced visual comfort in low-light environments.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6 space-y-6">
+                <div className="space-y-3">
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Theme Preference</label>
+                  <ThemeToggle variant="full" className="max-w-md" />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="profile" className="space-y-6">
             <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card">
@@ -419,6 +532,88 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Recipient ID (Phone)</label><Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl border-2 font-black tracking-widest" /></div>
                 <Button onClick={handleUpdateProfile} className="h-11 font-black px-10 rounded-xl bg-primary w-full sm:w-auto">Save Changes</Button>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card border-2 border-primary/20">
+              <CardHeader className="bg-primary/5 p-6 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <CardTitle className="text-lg font-black uppercase tracking-tighter flex items-center gap-2 text-primary">
+                    <ShieldCheck className="h-5 w-5" /> Personal Identity & KYC (NIN & BVN)
+                  </CardTitle>
+                  <CardDescription className="text-xs font-medium mt-1">
+                    Regulatory policy mandates 11-digit NIN and BVN verification to process withdrawals and bank transfers up to ₦5,000,000.
+                  </CardDescription>
+                </div>
+                {(profile?.kycStatus === 'Verified' || profile?.kycTier === 'Tier 2' || (nin.length === 11 && bvn.length === 11)) ? (
+                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 px-3.5 py-1.5 font-black uppercase text-[10px] gap-1.5 shadow-sm">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Tier 2 Verified (₦5,000,000 Limit)
+                  </Badge>
+                ) : (
+                  <Badge className="bg-amber-100 text-amber-800 border-amber-300 px-3.5 py-1.5 font-black uppercase text-[10px] gap-1.5 shadow-sm">
+                    <ShieldAlert className="h-4 w-4 text-amber-600" /> Tier 1 Unverified (₦50,000 Limit)
+                  </Badge>
+                )}
+              </CardHeader>
+              <CardContent className="p-6 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">National Identification Number (NIN) *</label>
+                      <span className="text-[9px] font-black text-muted-foreground">{nin.length}/11</span>
+                    </div>
+                    <Input 
+                      value={nin} 
+                      onChange={(e) => setNin(e.target.value.replace(/\D/g, '').slice(0, 11))} 
+                      placeholder="Enter 11-digit NIN" 
+                      maxLength={11}
+                      className="h-12 rounded-xl border-2 font-black text-sm tracking-widest text-primary focus:border-primary" 
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Bank Verification Number (BVN) *</label>
+                      <span className="text-[9px] font-black text-muted-foreground">{bvn.length}/11</span>
+                    </div>
+                    <Input 
+                      value={bvn} 
+                      onChange={(e) => setBvn(e.target.value.replace(/\D/g, '').slice(0, 11))} 
+                      placeholder="Enter 11-digit BVN" 
+                      maxLength={11}
+                      className="h-12 rounded-xl border-2 font-black text-sm tracking-widest text-primary focus:border-primary" 
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-muted/40 p-4 rounded-xl border border-muted flex items-center justify-between gap-4 text-xs">
+                  <div className="space-y-1">
+                    <p className="font-black text-[10px] uppercase tracking-wider text-primary flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5" /> Tier Policy & Transaction Ceilings
+                    </p>
+                    <p className="text-[10px] text-muted-foreground font-medium">
+                      <strong>Tier 1 (Unverified)</strong>: ₦50,000 max single tx | <strong>Tier 2 (NIN & BVN Verified)</strong>: ₦5,000,000 max single tx.
+                    </p>
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={handleVerifyPersonalKyc} 
+                  disabled={isVerifyingPersonalKyc || nin.length !== 11 || bvn.length !== 11}
+                  className="h-12 font-black px-10 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground w-full sm:w-auto uppercase tracking-wider text-xs shadow-lg shadow-primary/20"
+                >
+                  {isVerifyingPersonalKyc ? (
+                    <>
+                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                      Validating NIN & BVN...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="h-4 w-4 mr-2" />
+                      Verify Identity (NIN + BVN)
+                    </>
+                  )}
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -804,10 +999,42 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    <Switch checked={pushEnabled} onCheckedChange={(val) => handleNotificationUpdate('push', val)} />
-                    {notificationPermission !== 'granted' && <Button size="sm" variant="outline" onClick={handleRequestPush} className="h-7 rounded-lg text-[8px] font-black uppercase">Authorize</Button>}
+                    <div className="flex items-center gap-2">
+                      <Switch checked={pushEnabled} onCheckedChange={(val) => handleNotificationUpdate('push', val)} />
+                    </div>
+                    {notificationPermission !== 'granted' ? (
+                      <Button size="sm" variant="outline" onClick={handleRequestPush} className="h-7 rounded-lg text-[8px] font-black uppercase bg-primary/10 hover:bg-primary/20 text-primary border-primary/20">
+                        Authorize
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" onClick={handleTestPush} className="h-7 rounded-lg text-[8px] font-black uppercase text-accent hover:bg-accent/10">
+                        Test Push Alert
+                      </Button>
+                    )}
                   </div>
                 </div>
+
+                {isIOSUser && !isStandaloneApp && (
+                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="font-bold text-xs text-primary flex items-center gap-1.5 uppercase tracking-wider">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        iOS Web Push Requirement
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        Apple iOS requires adding Call on Demand to your Home Screen before Push Notifications can be authorized.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowInstallModal(true)}
+                      className="shrink-0 h-8 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      View iOS Setup Guide
+                    </Button>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between p-4 border-2 border-dashed rounded-2xl bg-accent/5">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-xl bg-accent/10 flex items-center justify-center text-accent"><Mail className="h-5 w-5" /></div>
@@ -860,6 +1087,8 @@ export default function SettingsPage() {
           <Button variant="ghost" onClick={handleSignOut} className="w-full h-12 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl font-black uppercase text-[10px] tracking-widest">Terminate Account Session</Button>
         </div>
       </div>
+
+      <InstallAppDialog open={showInstallModal} onOpenChange={setShowInstallModal} />
     </div>
   )
 }

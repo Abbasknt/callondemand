@@ -24,14 +24,22 @@ function getFirebaseAdmin(): App {
                     });
                 } catch (error) {
                     console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY, using default credentials:', error);
-                    firebaseAdminApp = initializeApp();
+                    try {
+                        firebaseAdminApp = initializeApp();
+                    } catch (e) {
+                        console.error('Failed to initialize default Firebase Admin:', e);
+                    }
                 }
             } else {
-                firebaseAdminApp = initializeApp();
+                try {
+                    firebaseAdminApp = initializeApp();
+                } catch (e) {
+                    console.error('Failed to initialize default Firebase Admin:', e);
+                }
             }
         }
     }
-    return firebaseAdminApp;
+    return firebaseAdminApp!;
 }
 
 function getDb(): Firestore {

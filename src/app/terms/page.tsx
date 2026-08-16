@@ -128,10 +128,10 @@ export default function TermsPage() {
                     <h3 className="text-2xl font-black tracking-tight">5. Wallet & Payout Protocols</h3>
                   </div>
                   <p className="text-muted-foreground leading-relaxed font-medium">
-                    Financial liquidity on the platform is powered by the COD Unified Wallet.
+                    Financial liquidity on the platform is powered by the COD Wallet.
                   </p>
                   <ul className="list-disc pl-6 space-y-3 text-muted-foreground text-sm font-medium">
-                    <li><span className="text-foreground font-bold">Funding:</span> Wallet funding via Monnify is instant. Charges applied by the gateway are non-refundable once the handshake is complete.</li>
+                    <li><span className="text-foreground font-bold">Funding:</span> Wallet funding via Monnify is instant. Charges applied by the gateway are non-refundable once the Monnify settlement is complete.</li>
                     <li><span className="text-foreground font-bold">2FA Security:</span> You are responsible for the confidentiality of your 6-digit Security PIN. Any action performed with your PIN is legally considered authorized by you.</li>
                     <li><span className="text-foreground font-bold">Withdrawals:</span> Payouts are only permitted to bank accounts matching your verified platform name.</li>
                   </ul>

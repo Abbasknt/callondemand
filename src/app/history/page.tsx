@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 export default function RedirectPage() {
   const router = useRouter();
   useEffect(() => {
-    router.replace('/wallet');
+    router.replace('/transactions');
   }, [router]);
 
   return null;
 }
+

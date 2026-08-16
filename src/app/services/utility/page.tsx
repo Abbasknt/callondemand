@@ -32,8 +32,15 @@ import {
   History,
   Timer,
   ZapOff,
-  Navigation
+  Navigation,
+  X,
+  Check,
+  Tv,
+  MapPin,
+  Sparkles,
+  SlidersHorizontal
 } from "lucide-react"
+import { buildBillerSearchIndex, searchIndexedBillers } from "@/lib/indexed-biller-search"
 import { useUser, useFirestore, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { doc, collection, limit, orderBy, query } from "firebase/firestore"
 import { setDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -43,10 +50,14 @@ import { cn } from "@/lib/utils"
 import { 
   getBillersByCategory, 
   getBillerProducts, 
-  vendBillPayment 
+  vendBillPayment,
+  initMonnifyTransaction,
+  searchNetworkBundles,
+  initiateBundleCheckout
 } from "@/actions/monnify"
 import { triggerReceiptPrint, shareReceipt } from "@/lib/export-utils"
 import { PageTransition } from "@/components/page-transition"
+import { MotionalDealCard } from "@/components/promotions/motional-deal-card"
 
 type Step = 'category' | 'config' | 'payment' | 'processing' | 'result';
 type Category = 'AIRTIME' | 'DATA' | 'ELECTRICITY' | 'TV';
@@ -62,7 +73,7 @@ const NETWORKS = [
   { id: "mtn", name: "MTN", color: "bg-[#FFCC00]", text: "text-black" },
   { id: "airtel", name: "Airtel", color: "bg-[#E30613]", text: "text-white" },
   { id: "glo", name: "Glo", color: "bg-[#00953A]", text: "text-white" },
-  { id: "9mobile", name: "9mobile", color: "bg-[#006838]", text: "text-white" },
+  { id: "9mobile", name: "9mobile / 9ja", color: "bg-[#006838]", text: "text-white" },
 ];
 
 const PREFIXES: Record<string, string> = {
@@ -93,9 +104,24 @@ export default function TopUpHub() {
   const [amount, setAmount] = useState("")
   const [productSearch, setProductSearch] = useState("")
   const [dataFilter, setDataFilter] = useState("ALL")
+  const [billerSearch, setBillerSearch] = useState("")
+  const [billerTypeFilter, setBillerTypeFilter] = useState("ALL")
   
   const [vendResult, setVendResult] = useState<any>(null)
   const [mounted, setMounted] = useState(false)
+
+  // Pre-computed indexed lookup table for instant sub-millisecond biller search
+  const billerSearchIndex = useMemo(() => {
+    return buildBillerSearchIndex(billers);
+  }, [billers]);
+
+  // Scored indexed results
+  const filteredBillers = useMemo(() => {
+    return searchIndexedBillers(billerSearchIndex, {
+      query: billerSearch,
+      typeFilter: billerTypeFilter,
+    });
+  }, [billerSearchIndex, billerSearch, billerTypeFilter]);
 
   useEffect(() => {
     setMounted(true)
@@ -127,6 +153,17 @@ export default function TopUpHub() {
     if (!recentTxs) return [];
     return recentTxs.filter(tx => tx.description?.toLowerCase().includes('top-up'));
   }, [recentTxs]);
+
+  const handleSelectCategory = useCallback((cat: Category) => {
+    setActiveCategory(cat);
+    setSelectedNetwork(null);
+    setSelectedProduct(null);
+    setVariations([]);
+    setBillerSearch("");
+    setBillerTypeFilter("ALL");
+    setAmount("");
+    setCurrentStep('config');
+  }, []);
 
   const syncVariationsForBiller = useCallback(async (biller: any) => {
     const billerName = biller.name || biller.billerName || biller.billerCode || '';
@@ -183,32 +220,42 @@ export default function TopUpHub() {
       return false;
     });
     
-    const effectiveBillers = targetBillers.length > 0 ? targetBillers : [{ billerCode: 'BIL001', billerName: `${networkId.toUpperCase()} Nigeria`, name: `${networkId.toUpperCase()} Nigeria`, code: 'BIL001' }];
+    const defaultBillerCode = networkId === 'glo' ? 'BIL003' : networkId === 'airtel' ? 'BIL002' : networkId === '9mobile' ? 'BIL004' : 'BIL001';
+    const effectiveBillers = targetBillers.length > 0 ? targetBillers : [{ billerCode: defaultBillerCode, billerName: `${networkId.toUpperCase()} Nigeria`, name: `${networkId.toUpperCase()} Nigeria`, code: defaultBillerCode }];
 
     if (activeCategory === 'DATA' || activeCategory === 'AIRTIME') {
       setIsVerifying(true);
       try {
         let allProducts: any[] = [];
         
-        await Promise.all(effectiveBillers.map(async (targetBiller) => {
-          const result = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
-          if (result && result.success) {
-            const categoryProducts = result.response.filter((p: any) => {
-              const pCatCode = p.category?.code || '';
-              const pCatName = p.category?.name || '';
-              const targetCat = CATEGORY_MAP[activeCategory];
-              
-              const isCatMatch = pCatCode === targetCat || pCatName === targetCat || 
-                               (activeCategory === 'DATA' && (pCatCode === 'DATA' || pCatCode === 'DATA_BUNDLE' || pCatName === 'DATA'));
-              
-              const isNetworkMatch = (p.biller?.name || '').toLowerCase().includes((targetBiller.name || '').toLowerCase()) || 
-                                   (p.biller?.code || '').toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || 
-                                   (p.name || '').toLowerCase().includes((targetBiller.name || '').toLowerCase());
-              return isCatMatch && isNetworkMatch;
-            });
-            allProducts = [...allProducts, ...(categoryProducts.length > 0 ? categoryProducts : result.response)];
+        if (activeCategory === 'DATA') {
+          const bundleRes = await searchNetworkBundles({ network: networkId });
+          if (bundleRes && bundleRes.success && bundleRes.response && bundleRes.response.length > 0) {
+            allProducts = bundleRes.response;
           }
-        }));
+        }
+
+        if (allProducts.length === 0) {
+          await Promise.all(effectiveBillers.map(async (targetBiller) => {
+            const result = await getBillerProducts(targetBiller.code || targetBiller.billerCode);
+            if (result && result.success) {
+              const categoryProducts = result.response.filter((p: any) => {
+                const pCatCode = p.category?.code || '';
+                const pCatName = p.category?.name || '';
+                const targetCat = CATEGORY_MAP[activeCategory];
+                
+                const isCatMatch = pCatCode === targetCat || pCatName === targetCat || 
+                                 (activeCategory === 'DATA' && (pCatCode === 'DATA' || pCatCode === 'DATA_BUNDLE' || pCatName === 'DATA'));
+                
+                const isNetworkMatch = (p.biller?.name || '').toLowerCase().includes((targetBiller.name || '').toLowerCase()) || 
+                                     (p.biller?.code || '').toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || 
+                                     (p.name || '').toLowerCase().includes((targetBiller.name || '').toLowerCase());
+                return isCatMatch && isNetworkMatch;
+              });
+              allProducts = [...allProducts, ...(categoryProducts.length > 0 ? categoryProducts : result.response)];
+            }
+          }));
+        }
 
         setVariations(allProducts);
         // Auto-select for Airtime since we don't show a list for it in network mode
@@ -256,12 +303,25 @@ export default function TopUpHub() {
           setBillers(uniqueBillers);
 
           if (selectedNetwork && (activeCategory === 'DATA' || activeCategory === 'AIRTIME')) {
+              if (activeCategory === 'DATA') {
+                const bundleRes = await searchNetworkBundles({ network: selectedNetwork });
+                if (bundleRes && bundleRes.success && bundleRes.response && bundleRes.response.length > 0) {
+                  if (!isSubscribed) return;
+                  setVariations(bundleRes.response);
+                  setSelectedProduct(null);
+                  return;
+                }
+              }
+
               const targetBillers = uniqueBillers.filter((b: any) => {
-                const name = b.name.toLowerCase();
+                const name = (b.name || b.billerName || '').toLowerCase();
+                const code = (b.billerCode || b.code || '').toLowerCase();
                 const net = selectedNetwork.toLowerCase();
-                if (name.includes(net)) return true;
+                if (name.includes(net) || code.includes(net)) return true;
                 if (net === '9mobile' && (name.includes('9mobile') || name.includes('etisalat') || name.includes('emts'))) return true;
                 if (net === 'airtel' && name.includes('airtel')) return true;
+                if (net === 'mtn' && name.includes('mtn')) return true;
+                if (net === 'glo' && (name.includes('glo') || name.includes('globacom'))) return true;
                 return false;
               });
               
@@ -278,7 +338,7 @@ export default function TopUpHub() {
                         const targetCat = CATEGORY_MAP[activeCategory];
                         
                         const isCatMatch = pCatCode === targetCat || pCatName === targetCat || 
-                                         (activeCategory === 'DATA' && (pCatCode === 'DATA' || pCatName === 'DATA'));
+                                         (activeCategory === 'DATA' && (pCatCode === 'DATA' || pCatCode === 'DATA_BUNDLE' || pCatName === 'DATA'));
                         
                         const isNetworkMatch = p.biller?.name?.toLowerCase().includes(targetBiller.name.toLowerCase()) || 
                                              p.biller?.code?.toLowerCase() === (targetBiller.code || targetBiller.billerCode)?.toLowerCase() || 
@@ -428,11 +488,11 @@ export default function TopUpHub() {
 
     const reference = `REF-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
     const result = await vendBillPayment({
-      productCode: (selectedProduct?.code || selectedProduct?.productCode || targetBiller.billerCode),
+      productCode: (selectedProduct?.code || selectedProduct?.productCode || targetBiller.billerCode || targetBiller.code || 'PRD100'),
       customerId: customerId,
       amount: finalAmount,
       paymentReference: reference,
-      billerCode: targetBiller.billerCode,
+      billerCode: targetBiller.billerCode || targetBiller.code || 'BIL001',
       emailAddress: user.email || ''
     });
 
@@ -445,6 +505,8 @@ export default function TopUpHub() {
       
       addDocumentNonBlocking(collection(walletRef!, 'transactions'), {
         type: 'Payment', 
+        category: activeCategory.toLowerCase(),
+        serviceType: 'utility',
         amount: finalAmount, 
         description: `Top-up: ${selectedNetwork.toUpperCase()} ${activeCategory} to ${customerId}`, 
         transactionDate: new Date().toISOString(), 
@@ -489,8 +551,11 @@ export default function TopUpHub() {
 
         {currentStep === 'category' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+            {/* Motional Live Deal Card */}
+            <MotionalDealCard />
+
             <div className="grid grid-cols-2 gap-4">
-              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => { setActiveCategory("AIRTIME"); setCurrentStep('config'); }}>
+              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => handleSelectCategory("AIRTIME")}>
                 <div className="h-1.5 bg-primary" />
                 <CardContent className="p-6 flex flex-col items-center justify-center text-center gap-3">
                   <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
@@ -503,7 +568,7 @@ export default function TopUpHub() {
                 </CardContent>
               </Card>
               
-              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => { setActiveCategory("DATA"); setCurrentStep('config'); }}>
+              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => handleSelectCategory("DATA")}>
                 <div className="h-1.5 bg-accent" />
                 <CardContent className="p-6 flex flex-col items-center justify-center text-center gap-3">
                   <div className="h-12 w-12 rounded-2xl bg-accent/10 flex items-center justify-center text-accent group-hover:scale-110 transition-transform">
@@ -516,7 +581,7 @@ export default function TopUpHub() {
                 </CardContent>
               </Card>
 
-              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => { setActiveCategory("ELECTRICITY"); setCurrentStep('config'); }}>
+              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => handleSelectCategory("ELECTRICITY")}>
                 <div className="h-1.5 bg-yellow-500" />
                 <CardContent className="p-6 flex flex-col items-center justify-center text-center gap-3">
                   <div className="h-12 w-12 rounded-2xl bg-yellow-100 flex items-center justify-center text-yellow-600 group-hover:scale-110 transition-transform">
@@ -529,7 +594,7 @@ export default function TopUpHub() {
                 </CardContent>
               </Card>
 
-              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => { setActiveCategory("TV"); setCurrentStep('config'); }}>
+              <Card className="rounded-3xl border-none shadow-xl bg-card overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => handleSelectCategory("TV")}>
                 <div className="h-1.5 bg-purple-500" />
                 <CardContent className="p-6 flex flex-col items-center justify-center text-center gap-3">
                   <div className="h-12 w-12 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-600 group-hover:scale-110 transition-transform">
@@ -639,25 +704,193 @@ export default function TopUpHub() {
                     ))}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    {billers.map(biller => (
-                      <Button 
-                        key={biller.billerCode}
-                        variant="outline"
-                        onClick={() => syncVariationsForBiller(biller)}
-                        className={cn(
-                          "h-20 rounded-2xl border-2 font-black text-[9px] uppercase px-4 leading-tight flex flex-col items-center justify-center gap-2 transition-all text-center",
-                          selectedNetwork === biller.name ? 
-                            "bg-primary text-white border-transparent shadow-lg scale-[1.05]" : 
-                            "bg-white hover:border-primary/30"
-                        )}
-                      >
-                        <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center", selectedNetwork === biller.name ? "bg-white/20" : "bg-muted")}>
-                           {activeCategory === 'ELECTRICITY' ? <Activity className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
+                  <div className="space-y-3">
+                    {/* Indexed Client-Side Search Bar & Count Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                          {activeCategory === 'ELECTRICITY' ? 'Electricity Distribution Companies (DisCos)' : 'Cable & TV Service Providers'}
+                        </span>
+                      </div>
+                      {billers.length > 0 && (
+                        <div className="flex items-center gap-1.5 self-start sm:self-auto bg-muted/60 text-muted-foreground px-2.5 py-1 rounded-full text-[10px] font-bold">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>
+                            {filteredBillers.length === billers.length
+                              ? `${billers.length} Providers Available`
+                              : `Showing ${filteredBillers.length} of ${billers.length}`}
+                          </span>
                         </div>
-                        <span className="truncate w-full">{biller.name}</span>
-                      </Button>
-                    ))}
+                      )}
+                    </div>
+
+                    {/* Instant Search Bar */}
+                    <div className="relative">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50 pointer-events-none" />
+                      <Input 
+                        id="biller-search-input"
+                        type="text" 
+                        placeholder={
+                          activeCategory === 'ELECTRICITY' 
+                            ? "Search DisCos (e.g. Ikeja, Eko, Abuja, Kano, IBEDC, Prepaid, Lagos)..." 
+                            : activeCategory === 'TV' 
+                            ? "Search TV billers (e.g. DStv, GOtv, StarTimes, Showmax)..." 
+                            : "Search utility billers by name, state, or code..."
+                        }
+                        value={billerSearch} 
+                        onChange={(e) => setBillerSearch(e.target.value)} 
+                        className="h-13 pl-11 pr-10 rounded-2xl border-2 text-xs font-semibold focus:border-primary bg-background shadow-xs transition-all"
+                      />
+                      {billerSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setBillerSearch("")}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-muted/80 hover:bg-muted text-muted-foreground flex items-center justify-center transition-colors"
+                          title="Clear search"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Quick Filter Tabs */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                      {activeCategory === 'ELECTRICITY' && [
+                        { id: 'ALL', label: 'All DisCos' },
+                        { id: 'POPULAR', label: 'Popular' },
+                        { id: 'PREPAID', label: 'Prepaid Token' },
+                        { id: 'POSTPAID', label: 'Postpaid' },
+                      ].map(tab => (
+                        <Button
+                          key={tab.id}
+                          type="button"
+                          size="sm"
+                          variant={billerTypeFilter === tab.id ? "default" : "outline"}
+                          onClick={() => setBillerTypeFilter(tab.id)}
+                          className={cn(
+                            "h-7 px-3 rounded-xl text-[9px] font-black uppercase tracking-wider shrink-0 transition-all",
+                            billerTypeFilter === tab.id ? "shadow-xs" : "bg-card hover:bg-muted"
+                          )}
+                        >
+                          {tab.label}
+                        </Button>
+                      ))}
+
+                      {activeCategory === 'TV' && [
+                        { id: 'ALL', label: 'All TV Services' },
+                        { id: 'POPULAR', label: 'Popular' },
+                        { id: 'CABLE', label: 'Satellite & Cable' },
+                        { id: 'STREAMING', label: 'Streaming' },
+                      ].map(tab => (
+                        <Button
+                          key={tab.id}
+                          type="button"
+                          size="sm"
+                          variant={billerTypeFilter === tab.id ? "default" : "outline"}
+                          onClick={() => setBillerTypeFilter(tab.id)}
+                          className={cn(
+                            "h-7 px-3 rounded-xl text-[9px] font-black uppercase tracking-wider shrink-0 transition-all",
+                            billerTypeFilter === tab.id ? "shadow-xs" : "bg-card hover:bg-muted"
+                          )}
+                        >
+                          {tab.label}
+                        </Button>
+                      ))}
+                    </div>
+
+                    {/* Fast Filtered Biller Grid */}
+                    {filteredBillers.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[340px] overflow-y-auto pr-1">
+                        {filteredBillers.map(biller => {
+                          const isSelected = selectedNetwork === biller.name || selectedNetwork === biller.billerName;
+                          return (
+                            <button
+                              key={biller.billerCode || biller.code}
+                              type="button"
+                              onClick={() => syncVariationsForBiller(biller)}
+                              className={cn(
+                                "relative p-4 rounded-2xl border-2 text-left transition-all flex flex-col justify-between gap-2.5 group",
+                                isSelected 
+                                  ? "border-primary bg-primary/5 shadow-md ring-2 ring-primary/20 scale-[1.01]" 
+                                  : "border-border bg-card hover:border-primary/40 hover:bg-accent/5 hover:shadow-xs"
+                              )}
+                            >
+                              <div className="flex items-start justify-between gap-2 w-full">
+                                <div className="flex items-center gap-3">
+                                  <div className={cn(
+                                    "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+                                    isSelected 
+                                      ? "bg-primary text-white shadow-xs" 
+                                      : "bg-muted text-foreground group-hover:bg-primary/10 group-hover:text-primary"
+                                  )}>
+                                    {activeCategory === 'ELECTRICITY' ? (
+                                      <Activity className="h-5 w-5" />
+                                    ) : activeCategory === 'TV' ? (
+                                      <Tv className="h-5 w-5" />
+                                    ) : (
+                                      <Smartphone className="h-5 w-5" />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <h4 className="text-xs font-black text-foreground tracking-tight leading-snug line-clamp-1">
+                                      {biller.name || biller.billerName}
+                                    </h4>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      {biller.billerCode && (
+                                        <span className="text-[8px] font-mono font-bold text-muted-foreground uppercase bg-muted/80 px-1.5 py-0.5 rounded">
+                                          {biller.billerCode}
+                                        </span>
+                                      )}
+                                      {biller.popular && (
+                                        <span className="text-[8px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                          Popular
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <div className="h-5 w-5 rounded-full bg-primary text-white flex items-center justify-center shrink-0 shadow-xs">
+                                    <Check className="h-3 w-3 stroke-[3]" />
+                                  </div>
+                                )}
+                              </div>
+
+                              {biller.region && (
+                                <div className="flex items-center gap-1.5 text-[9px] font-medium text-muted-foreground/80 truncate">
+                                  <MapPin className="h-3 w-3 shrink-0 text-primary/70" />
+                                  <span className="truncate">{biller.region}</span>
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-8 rounded-2xl border-2 border-dashed border-muted-foreground/20 text-center space-y-3 bg-muted/5">
+                        <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mx-auto text-muted-foreground">
+                          <Search className="h-5 w-5 opacity-40" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-foreground">No matching billers found</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            No provider matched &quot;{billerSearch}&quot;.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setBillerSearch("");
+                            setBillerTypeFilter("ALL");
+                          }}
+                          className="rounded-xl text-[10px] font-black uppercase h-8 px-4"
+                        >
+                          Clear Filter
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -800,13 +1033,48 @@ export default function TopUpHub() {
               </div>
             </CardContent>
             <CardFooter className="p-10 bg-muted/5 border-t flex flex-col gap-4">
-              <Button 
-                onClick={handleFinalVend} 
-                disabled={!wallet || wallet.balance < ((activeCategory === 'DATA' || activeCategory === 'TV') ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount))}
-                className="w-full h-16 rounded-xl font-black text-xl bg-primary shadow-xl"
-              >
-                Confirm & Pay Now
-              </Button>
+              {wallet && wallet.balance < ((activeCategory === 'DATA' || activeCategory === 'TV') ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount)) ? (
+                <div className="w-full space-y-3">
+                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl text-left">
+                    <p className="text-[10px] font-black uppercase text-amber-800">Insufficient Wallet Balance</p>
+                    <p className="text-[9px] font-medium text-amber-700 mt-0.5">
+                      Your funded wallet balance is ₦{(wallet.balance || 0).toLocaleString()}. You need ₦{(((activeCategory === 'DATA' || activeCategory === 'TV') ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount)) - (wallet.balance || 0)).toLocaleString()} more to settle this transaction.
+                    </p>
+                  </div>
+                  <Button 
+                    onClick={async () => {
+                      const finalVal = (activeCategory === 'DATA' || activeCategory === 'TV') ? Number(selectedProduct.price || selectedProduct.amount) : Number(amount);
+                      const topUpVal = Math.max(finalVal - wallet.balance, 500);
+                      const ref = `COD-TOPUP-${Date.now()}`;
+                      const res = await initMonnifyTransaction({
+                        amount: topUpVal,
+                        customerEmail: user?.email || '',
+                        customerName: user?.displayName || 'COD Partner',
+                        paymentReference: ref,
+                        paymentDescription: `Wallet Top-Up for ${activeCategory}`,
+                        redirectUrl: `${window.location.origin}/wallet/callback?amount=${topUpVal}`
+                      });
+                      if (res && res.success && res.response?.checkoutUrl) {
+                        toast({ title: "Redirecting to Monnify", description: "Authorizing wallet top-up..." });
+                        window.location.href = res.response.checkoutUrl;
+                      } else {
+                        toast({ title: "Gateway Error", description: res?.error || "Could not initialize Monnify funding.", variant: "destructive" });
+                      }
+                    }}
+                    className="w-full h-16 rounded-xl font-black text-lg bg-amber-600 hover:bg-amber-700 text-white shadow-xl uppercase tracking-wider"
+                  >
+                    Fund Wallet via Monnify
+                  </Button>
+                </div>
+              ) : (
+                <Button 
+                  onClick={handleFinalVend} 
+                  disabled={!wallet}
+                  className="w-full h-16 rounded-xl font-black text-xl bg-primary shadow-xl"
+                >
+                  Confirm & Pay via Wallet
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => setCurrentStep('config')} className="text-[10px] font-black uppercase tracking-widest opacity-40">Cancel</Button>
             </CardFooter>
           </Card>

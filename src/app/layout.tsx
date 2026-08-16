@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Toaster } from "@/components/ui/toaster";
@@ -7,19 +6,26 @@ import { ServiceWorkerRegistration } from '@/components/service-worker-registrat
 import { FirestoreMonitor } from '@/components/firestore-monitor';
 import { WalletBalanceGuard } from '@/components/wallet-balance-guard';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { ThemeProvider } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
-
-const inter = Inter({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-inter',
-});
 
 // Root Layout
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://callondemandbiz.com'),
   title: 'Call on Demand.com | Unified Life, Seamlessly Demanded',
   description: 'One platform for your wallet, food, laundry, logistics, and investments.',
+  alternates: {
+    canonical: 'https://callondemandbiz.com',
+  },
+  openGraph: {
+    title: 'Call on Demand Nigeria | Unified Lifestyle Ecosystem',
+    description: 'One unified platform for your wallet, food, laundry, logistics, and investments across Nigeria.',
+    url: 'https://callondemandbiz.com',
+    siteName: 'Call on Demand',
+    locale: 'en_NG',
+    type: 'website',
+  },
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -30,8 +36,12 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
-    icon: 'https://picsum.photos/seed/cod-fav/32/32',
-    apple: 'https://picsum.photos/seed/cod-apple/180/180',
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: [
+      { url: '/logo.png', sizes: '180x180', type: 'image/png' },
+      { url: 'https://picsum.photos/seed/cod-apple/180/180', sizes: '180x180', type: 'image/png' }
+    ],
   }
 };
 
@@ -51,16 +61,39 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("antialiased", inter.variable)} suppressHydrationWarning>
-      <body className="selection:bg-primary/20 bg-background overflow-x-hidden font-sans" suppressHydrationWarning>
+    <html lang="en" className="antialiased" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var saved = localStorage.getItem('cod-theme');
+                  var supportDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                  if (saved === 'dark' || (!saved && supportDarkMode) || (saved === 'system' && supportDarkMode)) {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.style.colorScheme = 'dark';
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.style.colorScheme = 'light';
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
+      <body className="selection:bg-primary/20 bg-background text-foreground overflow-x-hidden font-sans transition-colors duration-200" suppressHydrationWarning>
         <ErrorBoundary>
-          <FirebaseClientProvider>
-            <FirestoreMonitor />
-            <WalletBalanceGuard />
-            <ServiceWorkerRegistration />
-            {children}
-            <Toaster />
-          </FirebaseClientProvider>
+          <ThemeProvider defaultTheme="system" storageKey="cod-theme">
+            <FirebaseClientProvider>
+              <FirestoreMonitor />
+              <WalletBalanceGuard />
+              <ServiceWorkerRegistration />
+              {children}
+              <Toaster />
+            </FirebaseClientProvider>
+          </ThemeProvider>
         </ErrorBoundary>
       </body>
     </html>

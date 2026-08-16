@@ -4,43 +4,43 @@ import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { initializeFirestore, getFirestore, Firestore, setLogLevel, doc, getDocFromServer } from 'firebase/firestore';
 
+let cachedApp: FirebaseApp | null = null;
+let cachedAuth: Auth | null = null;
+let cachedFirestore: Firestore | null = null;
+
 /**
  * Isolated initialization logic to prevent circular dependency cycles.
  * This is the source of truth for Firebase service instances.
  */
 export function initializeFirebase() {
-  const existingApps = getApps();
-  const firebaseApp = existingApps.length ? getApp() : initializeApp(firebaseConfig);
-  const dbId = (firebaseConfig as any).firestoreDatabaseId === '(default)' ? undefined : (firebaseConfig as any).firestoreDatabaseId;
-
-  let firestore: Firestore;
-  if (typeof window === 'undefined') {
-    firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
-    const auth = getAuth(firebaseApp);
+  if (cachedApp && cachedAuth && cachedFirestore) {
     return {
-      firebaseApp,
-      auth,
-      firestore,
+      firebaseApp: cachedApp,
+      auth: cachedAuth,
+      firestore: cachedFirestore,
       vertexAI: null as any
     };
   }
 
-  try {
-    const settings = {
-      experimentalAutoDetectLongPolling: true,
-    };
+  const existingApps = getApps();
+  const firebaseApp = existingApps.length ? getApp() : initializeApp(firebaseConfig);
+  cachedApp = firebaseApp;
 
-    firestore = dbId 
-      ? initializeFirestore(firebaseApp, settings, dbId)
-      : initializeFirestore(firebaseApp, settings);
-    
+  const rawDbId = (firebaseConfig as any).firestoreDatabaseId;
+  const dbId = !rawDbId || rawDbId === '(default)' ? undefined : rawDbId;
+
+  const auth = getAuth(firebaseApp);
+  cachedAuth = auth;
+
+  let firestore: Firestore;
+  try {
+    firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
     setLogLevel('silent');
   } catch (e) {
     firestore = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
   }
 
-  // Skip network connection tests during initialization to prevent hanging build processes and SSR promises
-  const auth = getAuth(firebaseApp);
+  cachedFirestore = firestore;
 
   return {
     firebaseApp,

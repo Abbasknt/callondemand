@@ -24,9 +24,21 @@ import {
   Play
 } from "lucide-react"
 import { PageTransition } from "@/components/page-transition"
+import { MotionalAdsBanner } from "@/components/promotions/motional-ads-banner"
+import { MotionalAdsTicker } from "@/components/promotions/motional-ads-ticker"
 
 const ALL_SERVICES = [
   // Lifestyle Services
+  {
+    id: "data-bundles",
+    name: "Search Data Bundles",
+    category: "Lifestyle",
+    desc: "Search, filter, and buy instant 4G/5G data bundles for MTN, Airtel, Glo, and 9mobile via Monnify Gateway.",
+    href: "/services/data",
+    icon: Zap,
+    badge: "Monnify VAS",
+    status: "Operational"
+  },
   {
     id: "utility",
     name: "Top-up Hub",
@@ -83,7 +95,7 @@ const ALL_SERVICES = [
     name: "Personal Errands",
     category: "Fulfillment",
     desc: "Delegate your tasks. Hire a verified personal runner for shopping, pick-ups, or bill payment.",
-    href: "/services/errands",
+    href: "/logistics?tab=errand",
     icon: ClipboardList,
     status: "Operational"
   },
@@ -92,7 +104,7 @@ const ALL_SERVICES = [
     name: "Cargo Shipping",
     category: "Fulfillment",
     desc: "Book large-scale freight, interstate cargo, and express shipping with reliable coverage.",
-    href: "/services/shipping",
+    href: "/logistics?tab=new-shipment",
     icon: Globe,
     status: "Operational"
   },
@@ -154,6 +166,9 @@ export default function ServicesHubPage() {
           </p>
         </div>
 
+        {/* Motional Featured Campaigns */}
+        <MotionalAdsBanner />
+
         {/* Search & Tabs Controls */}
         <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between pt-2">
           <div className="relative flex-1 max-w-md">
@@ -191,12 +206,12 @@ export default function ServicesHubPage() {
               return (
                 <Card 
                   key={service.id} 
-                  className="bg-card hover:shadow-md border-2 border-muted hover:border-primary/30 transition-all rounded-[1.75rem] overflow-hidden flex flex-col h-full group"
+                  className="bg-card hover:shadow-md border-2 border-muted hover:border-primary/30 transition-all rounded-2xl sm:rounded-[1.75rem] overflow-hidden flex flex-col h-full group"
                 >
-                  <CardHeader className="p-6 pb-2 shrink-0">
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform duration-300">
-                        <IconComp className="h-6 w-6" />
+                  <CardHeader className="p-4 xs:p-5 sm:p-6 pb-2 shrink-0">
+                    <div className="flex justify-between items-start gap-3 sm:gap-4">
+                      <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl sm:rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform duration-300 shrink-0">
+                        <IconComp className="h-5 w-5 sm:h-6 sm:w-6" />
                       </div>
                       <div className="flex flex-col items-end gap-1.5">
                         <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest border-green-500/20 text-green-600 bg-green-500/5 gap-1 py-0.5 px-2">
@@ -211,19 +226,19 @@ export default function ServicesHubPage() {
                     </div>
                   </CardHeader>
 
-                  <CardContent className="p-6 pt-2 flex-1 flex flex-col justify-between space-y-4">
+                  <CardContent className="p-4 xs:p-5 sm:p-6 pt-2 flex-1 flex flex-col justify-between space-y-3.5 sm:space-y-4">
                     <div className="space-y-1">
                       <p className="text-[8px] font-black uppercase text-primary tracking-widest">{service.category}</p>
-                      <CardTitle className="text-lg font-black tracking-tight">{service.name}</CardTitle>
-                      <CardDescription className="text-xs font-medium leading-relaxed text-muted-foreground">
+                      <CardTitle className="text-base sm:text-lg font-black tracking-tight">{service.name}</CardTitle>
+                      <CardDescription className="text-xs font-medium leading-relaxed text-muted-foreground line-clamp-2 sm:line-clamp-3">
                         {service.desc}
                       </CardDescription>
                     </div>
 
-                    <Button asChild size="sm" className="w-full h-10 rounded-xl font-black text-[9px] uppercase tracking-wider bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground group-hover:bg-primary group-hover:text-primary-foreground group/btn transition-all duration-300">
+                    <Button asChild size="sm" className="w-full h-10 min-h-[40px] sm:min-h-[44px] rounded-xl font-black text-[9px] sm:text-[10px] uppercase tracking-wider bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground group-hover:bg-primary group-hover:text-primary-foreground group/btn transition-all duration-300">
                       <Link href={service.href} className="flex items-center justify-center gap-2">
                         Initialize Protocol 
-                        <Play className="h-3 w-3 fill-current transition-transform duration-300 group-hover/btn:translate-x-0.5" />
+                        <Play className="h-3 w-3 fill-current transition-transform duration-300 group-hover/btn:translate-x-0.5 shrink-0" />
                       </Link>
                     </Button>
                   </CardContent>

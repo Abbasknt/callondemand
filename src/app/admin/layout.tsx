@@ -1,6 +1,8 @@
 import { MainNav } from "@/components/layout/main-nav"
 import { Toaster } from "@/components/ui/toaster"
 
+export const dynamic = 'force-dynamic';
+
 export default function AdminLayout({
   children,
 }: {

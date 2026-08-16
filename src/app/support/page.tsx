@@ -39,7 +39,7 @@ export default function SupportHub() {
   const faqs = [
     {
       q: "How do I fund my COD Wallet?",
-      a: "Navigate to the Wallet Hub, enter your desired amount, and select 'Authorize Settlement'. We use Monnify's secure gateway for instant funding via Card or Bank Transfer."
+      a: "Navigate to COD Wallet, enter your desired amount, and select 'Authorize Settlement'. We use Monnify's secure gateway for instant funding via Card or Bank Transfer."
     },
     {
       q: "What is the delivery turnaround time?",
