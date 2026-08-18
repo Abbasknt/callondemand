@@ -200,6 +200,10 @@ export default function LoginPage() {
 
     if (authenticatedUser) {
       try {
+        if (!firestore) {
+          router.push('/dashboard');
+          return;
+        }
         const userDocRef = doc(firestore, 'users', authenticatedUser.uid)
         const userDoc = await getDocumentSafe(userDocRef);
 

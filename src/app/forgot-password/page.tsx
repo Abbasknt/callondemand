@@ -25,6 +25,9 @@ export default function ForgotPasswordPage() {
     
     setLoading(true)
     try {
+      if (!auth) {
+        throw new Error("Authentication service is initializing. Please try again in a moment.");
+      }
       await sendPasswordResetEmail(auth, email)
       setSubmitted(true)
       toast({ title: "Email Sent", description: "Check your inbox for recovery instructions." })

@@ -199,12 +199,14 @@ function RouteDisplay({
       }).then(({ routes }) => {
         if (isCancelled) return;
         if (routes?.[0]) {
-          const newPolylines = routes[0].createPolylines({
-            strokeColor: '#0066FF',
-            strokeWeight: 5,
-            strokeOpacity: 0.85,
+          const newPolylines = (routes[0] as any).createPolylines({
+            polylineOptions: {
+              strokeColor: '#0066FF',
+              strokeWeight: 5,
+              strokeOpacity: 0.85,
+            },
           });
-          newPolylines.forEach(p => p.setMap(map));
+          newPolylines.forEach((p: any) => p.setMap(map));
           polylinesRef.current = newPolylines;
 
           if (routes[0].viewport) {
@@ -379,13 +381,11 @@ export function RealMap({
             mapId="DEMO_MAP_ID"
             internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
             style={{ width: '100%', height: '100%' }}
-            options={{
-              disableDefaultUI: false,
-              zoomControl: true,
-              mapTypeControl: false,
-              streetViewControl: false,
-              fullscreenControl: true,
-            }}
+            disableDefaultUI={false}
+            zoomControl={true}
+            mapTypeControl={false}
+            streetViewControl={false}
+            fullscreenControl={true}
           >
             {/* Real-Time Route Polyline Computation */}
             <RouteDisplay

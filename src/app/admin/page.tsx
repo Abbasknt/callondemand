@@ -31,6 +31,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { 
@@ -80,7 +89,11 @@ import {
   Star,
   Percent,
   Eye,
-  Send
+  Send,
+  X,
+  UserCheck,
+  Layers,
+  Filter
 } from "lucide-react"
 import { BrandLogo } from "@/components/brand-logo"
 import { useToast } from "@/hooks/use-toast"
@@ -88,12 +101,14 @@ import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@
 import { doc, collection, query, limit, orderBy } from "firebase/firestore"
 import { setDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { getMerchantBalance, getMerchantTransactions, resetMonnifyActions, checkGatewayHealth, saveMonnifyCredentials, testMonnifyCredentials, verifyTransaction } from "@/actions/monnify"
-import { approveFundingRequest, rejectFundingRequest, manualCreditUserWallet, verifyMonnifyGatewayMatch, type FundingRequestItem } from "@/actions/wallet-funding"
+import { approveFundingRequest, rejectFundingRequest, manualCreditUserWallet, verifyMonnifyGatewayMatch, blockFundingRequest, flagFundingRequest, toggleUserWalletFreeze, updateWalletGovernanceSettings } from "@/actions/wallet-funding"
+import { DEFAULT_WALLET_GOVERNANCE, type FundingRequestItem, type WalletGovernanceSettings } from "@/lib/wallet-governance-types"
 import { exportToCsv } from "@/lib/export-utils"
 import { cn } from "@/lib/utils"
 import { registerUserByAdmin } from "@/actions/admin-user"
 import { logAuditAction, AuditAction } from "@/lib/audit"
-import { XCircle, Ban, Wallet as WalletIcon } from "lucide-react"
+import { XCircle, Ban, Wallet as WalletIcon, ShieldAlert, SlidersHorizontal, Flag, AlertTriangle, Unlock } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
 
 const MASTER_ADMIN_EMAILS = ['altamambcs@callondemandbiz.com', 'tatatradeandinnovation@gmail.com', 'altamam02@gmail.com'];
 
@@ -212,6 +227,40 @@ export default function SuperAdminPage() {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false)
 
+  // Wallet Governance & Approval Engine State
+  const [govForm, setGovForm] = useState<WalletGovernanceSettings>(DEFAULT_WALLET_GOVERNANCE)
+  const [isSavingGov, setIsSavingGov] = useState(false)
+
+  // Block & Flag Transaction Dialog States
+  const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false)
+  const [blockReasonInput, setBlockReasonInput] = useState("")
+  const [isProcessingBlock, setIsProcessingBlock] = useState(false)
+
+  const [isFlagDialogOpen, setIsFlagDialogOpen] = useState(false)
+  const [flagReasonInput, setFlagReasonInput] = useState("")
+  const [isProcessingFlag, setIsProcessingFlag] = useState(false)
+
+  // User Wallet Freeze Dialog State
+  const [isFreezeWalletDialogOpen, setIsFreezeWalletDialogOpen] = useState(false)
+  const [selectedUserForFreeze, setSelectedUserForFreeze] = useState<any>(null)
+  const [freezeTargetState, setFreezeTargetState] = useState<boolean>(true)
+  const [freezeReasonInput, setFreezeReasonInput] = useState("")
+  const [isProcessingFreeze, setIsProcessingFreeze] = useState(false)
+
+  // Bulk User Management State
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
+  const [isBulkActionDialogOpen, setIsBulkActionDialogOpen] = useState(false)
+  const [bulkActionType, setBulkActionType] = useState<'freeze' | 'unfreeze' | 'release_restrictions' | 'restrict' | null>(null)
+  const [bulkActionReason, setBulkActionReason] = useState("")
+  const [isProcessingBulkUserAction, setIsProcessingBulkUserAction] = useState(false)
+  const [userRoleFilter, setUserRoleFilter] = useState<string>("All")
+  const [userStatusFilter, setUserStatusFilter] = useState<string>("All")
+
+  // Mandatory Bulk Confirmation State (Freeze / Release Safeguards)
+  const [isBulkConfirmDialogOpen, setIsBulkConfirmDialogOpen] = useState(false)
+  const [bulkConfirmPhrase, setBulkConfirmPhrase] = useState("")
+  const [bulkConfirmAcknowledged, setBulkConfirmAcknowledged] = useState(false)
+
   // Manual Credit Modal State
   const [isManualCreditOpen, setIsManualCreditOpen] = useState(false)
   const [manualCreditUserId, setManualCreditUserId] = useState("")
@@ -304,6 +353,21 @@ export default function SuperAdminPage() {
     return doc(firestore, 'application_settings', 'global_settings');
   }, [firestore]);
   const { data: appSettings } = useDoc(settingsRef);
+
+  const walletGovernanceRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'application_settings', 'wallet_governance');
+  }, [firestore]);
+  const { data: remoteGovernance } = useDoc(walletGovernanceRef);
+
+  useEffect(() => {
+    if (remoteGovernance) {
+      setGovForm({
+        ...DEFAULT_WALLET_GOVERNANCE,
+        ...remoteGovernance
+      });
+    }
+  }, [remoteGovernance]);
 
   useEffect(() => {
     if (appSettings) {
@@ -715,6 +779,130 @@ export default function SuperAdminPage() {
     }
   };
 
+  const handleSaveWalletGovernance = async () => {
+    if (!user?.email || !user?.uid) {
+      toast({ title: "Unauthorized", description: "Admin credentials required.", variant: "destructive" });
+      return;
+    }
+    setIsSavingGov(true);
+    try {
+      const res = await updateWalletGovernanceSettings({
+        settings: govForm,
+        adminEmail: user.email,
+        adminUid: user.uid
+      });
+
+      if (res.success) {
+        toast({
+          title: "Wallet Governance Saved",
+          description: `Approval Mode: ${govForm.approvalMode} | Max Limit: ₦${Number(govForm.maxTransactionLimit || 0).toLocaleString()} | Threshold: ₦${Number(govForm.approvalThreshold || 0).toLocaleString()}`,
+          className: "bg-green-600 text-white"
+        });
+      } else {
+        toast({ title: "Save Failed", description: res.error || "Failed to update governance.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Save Error", description: err?.message || "Internal error", variant: "destructive" });
+    } finally {
+      setIsSavingGov(false);
+    }
+  };
+
+  const handleBlockFunding = async (item: any) => {
+    if (!user?.email || !user?.uid) return;
+    setIsProcessingBlock(true);
+    try {
+      const res = await blockFundingRequest({
+        requestId: item.id,
+        adminEmail: user.email,
+        adminUid: user.uid,
+        blockReason: blockReasonInput || 'Suspicious or unverified transaction blocked by Administrator'
+      });
+
+      if (res.success) {
+        toast({
+          title: "Transaction Blocked",
+          description: `Transaction ${item.reference} has been blocked and marked prohibited.`,
+          className: "bg-red-600 text-white"
+        });
+        setIsBlockDialogOpen(false);
+        setSelectedFundingRequest(null);
+        setBlockReasonInput("");
+      } else {
+        toast({ title: "Block Failed", description: res.error || "Could not block transaction.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Execution Error", description: err?.message || "Internal error", variant: "destructive" });
+    } finally {
+      setIsProcessingBlock(false);
+    }
+  };
+
+  const handleFlagFunding = async (item: any) => {
+    if (!user?.email || !user?.uid) return;
+    setIsProcessingFlag(true);
+    try {
+      const res = await flagFundingRequest({
+        requestId: item.id,
+        adminEmail: user.email,
+        adminUid: user.uid,
+        flagReason: flagReasonInput || 'Flagged for compliance investigation'
+      });
+
+      if (res.success) {
+        toast({
+          title: "Transaction Flagged",
+          description: `Transaction ${item.reference} is marked for enhanced audit review.`,
+          className: "bg-amber-600 text-white"
+        });
+        setIsFlagDialogOpen(false);
+        setSelectedFundingRequest(null);
+        setFlagReasonInput("");
+      } else {
+        toast({ title: "Flagging Failed", description: res.error || "Could not flag transaction.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Execution Error", description: err?.message || "Internal error", variant: "destructive" });
+    } finally {
+      setIsProcessingFlag(false);
+    }
+  };
+
+  const handleExecuteWalletFreeze = async () => {
+    if (!selectedUserForFreeze?.id || !user?.email || !user?.uid) return;
+    setIsProcessingFreeze(true);
+    try {
+      const targetUserId = selectedUserForFreeze.id;
+      const targetUserEmail = selectedUserForFreeze.email || 'customer@call-on-demand.com';
+
+      const res = await toggleUserWalletFreeze({
+        userId: targetUserId,
+        userEmail: targetUserEmail,
+        isFrozen: freezeTargetState,
+        freezeReason: freezeReasonInput || (freezeTargetState ? 'Administrative wallet security freeze' : undefined),
+        adminEmail: user.email,
+        adminUid: user.uid
+      });
+
+      if (res.success) {
+        toast({
+          title: freezeTargetState ? "Wallet Frozen" : "Wallet Restored & Active",
+          description: `User wallet (${targetUserEmail}) has been ${freezeTargetState ? 'frozen and restricted' : 'unfrozen and activated'}.`,
+          className: freezeTargetState ? "bg-amber-600 text-white" : "bg-green-600 text-white"
+        });
+        setIsFreezeWalletDialogOpen(false);
+        setSelectedUserForFreeze(null);
+        setFreezeReasonInput("");
+      } else {
+        toast({ title: "Freeze Action Failed", description: res.error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Execution Error", description: err?.message, variant: "destructive" });
+    } finally {
+      setIsProcessingFreeze(false);
+    }
+  };
+
   const unitsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'operational_units'));
@@ -766,15 +954,27 @@ export default function SuperAdminPage() {
 
   const filteredUsers = useMemo(() => {
     if (!platformUsers) return [];
-    if (!userSearch) return platformUsers;
-    const queryStr = userSearch.toLowerCase();
-    return platformUsers.filter(u => 
-      u.firstName?.toLowerCase().includes(queryStr) || 
-      u.lastName?.toLowerCase().includes(queryStr) || 
-      u.email?.toLowerCase().includes(queryStr) ||
-      u.role?.toLowerCase().includes(queryStr)
-    );
-  }, [platformUsers, userSearch]);
+    return platformUsers.filter((u: any) => {
+      const matchesRole = userRoleFilter === "All" || u.role === userRoleFilter;
+      const isFrozen = !!u.isWalletFrozen;
+      const isRestricted = u.status === 'Restricted' || !!u.isRestricted;
+      const matchesStatus = userStatusFilter === "All" 
+        || (userStatusFilter === "Frozen" && isFrozen)
+        || (userStatusFilter === "Restricted" && isRestricted)
+        || (userStatusFilter === "Active" && !isFrozen && !isRestricted);
+      if (!matchesRole || !matchesStatus) return false;
+
+      if (!userSearch) return true;
+      const queryStr = userSearch.toLowerCase();
+      return (
+        u.firstName?.toLowerCase().includes(queryStr) || 
+        u.lastName?.toLowerCase().includes(queryStr) || 
+        u.email?.toLowerCase().includes(queryStr) ||
+        u.role?.toLowerCase().includes(queryStr) ||
+        u.assignedUnit?.toLowerCase().includes(queryStr)
+      );
+    });
+  }, [platformUsers, userSearch, userRoleFilter, userStatusFilter]);
 
   const pendingFundingRequests = useMemo(() => {
     if (!fundingRequestsList) return [];
@@ -794,9 +994,24 @@ export default function SuperAdminPage() {
       .reduce((acc: number, r: any) => acc + (Number(r.amount) || 0), 0);
   }, [fundingRequestsList]);
 
+  const approvedFundingCount = useMemo(() => {
+    if (!fundingRequestsList) return 0;
+    return fundingRequestsList.filter((r: any) => r.status === 'Approved').length;
+  }, [fundingRequestsList]);
+
   const rejectedFundingCount = useMemo(() => {
     if (!fundingRequestsList) return 0;
     return fundingRequestsList.filter((r: any) => r.status === 'Rejected').length;
+  }, [fundingRequestsList]);
+
+  const blockedFundingCount = useMemo(() => {
+    if (!fundingRequestsList) return 0;
+    return fundingRequestsList.filter((r: any) => r.status === 'Blocked').length;
+  }, [fundingRequestsList]);
+
+  const flaggedFundingCount = useMemo(() => {
+    if (!fundingRequestsList) return 0;
+    return fundingRequestsList.filter((r: any) => r.status === 'Flagged').length;
   }, [fundingRequestsList]);
 
   const filteredFundingRequests = useMemo(() => {
@@ -1034,6 +1249,214 @@ export default function SuperAdminPage() {
     setSelectedTaskIds([]);
   }
 
+  // Bulk User Management Operations
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUserIds(prev => 
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const toggleAllUsers = () => {
+    if (!filteredUsers || filteredUsers.length === 0) return;
+    if (selectedUserIds.length === filteredUsers.length) {
+      setSelectedUserIds([]);
+    } else {
+      setSelectedUserIds(filteredUsers.map((u: any) => u.id));
+    }
+  };
+
+  const clearUserSelection = () => {
+    setSelectedUserIds([]);
+  };
+
+  const getBulkActionKeyword = (type: 'freeze' | 'unfreeze' | 'release_restrictions' | 'restrict' | null) => {
+    if (type === 'freeze') return 'FREEZE';
+    if (type === 'unfreeze' || type === 'release_restrictions') return 'RELEASE';
+    if (type === 'restrict') return 'RESTRICT';
+    return 'CONFIRM';
+  };
+
+  const openBulkUserActionDialog = (type: 'freeze' | 'unfreeze' | 'release_restrictions' | 'restrict') => {
+    setBulkActionType(type);
+    setBulkActionReason("");
+    setIsBulkActionDialogOpen(true);
+  };
+
+  const handleOpenBulkConfirmation = () => {
+    if (selectedUserIds.length === 0 || !bulkActionType) return;
+    setBulkConfirmPhrase("");
+    setBulkConfirmAcknowledged(false);
+    setIsBulkConfirmDialogOpen(true);
+  };
+
+  const handleExecuteBulkUserAction = async () => {
+    if (!firestore || !user?.email || !user?.uid || selectedUserIds.length === 0 || !bulkActionType) return;
+    
+    // Mandatory verification check
+    const expectedKeyword = getBulkActionKeyword(bulkActionType);
+    if (bulkConfirmPhrase.trim().toUpperCase() !== expectedKeyword || !bulkConfirmAcknowledged) {
+      toast({
+        title: "Confirmation Required",
+        description: `Please acknowledge the warning and type ${expectedKeyword} to execute this bulk operation.`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsProcessingBulkUserAction(true);
+    const count = selectedUserIds.length;
+    const action = bulkActionType;
+    const reason = bulkActionReason.trim();
+
+    try {
+      if (action === 'freeze' || action === 'unfreeze') {
+        const isFreeze = action === 'freeze';
+        const freezeReason = isFreeze ? (reason || 'Administrative bulk wallet security freeze') : null;
+        
+        for (const userId of selectedUserIds) {
+          const targetUser = platformUsers?.find((u: any) => u.id === userId);
+          const targetUserEmail = targetUser?.email || 'partner@call-on-demand.com';
+
+          updateDocumentNonBlocking(doc(firestore, 'users', userId), {
+            isWalletFrozen: isFreeze,
+            walletFrozenAt: isFreeze ? new Date().toISOString() : null,
+            walletFreezeReason: freezeReason,
+            updatedAt: new Date().toISOString()
+          });
+
+          toggleUserWalletFreeze({
+            userId,
+            userEmail: targetUserEmail,
+            isFrozen: isFreeze,
+            freezeReason: freezeReason || undefined,
+            adminEmail: user.email,
+            adminUid: user.uid
+          }).catch(err => console.warn(`Bulk wallet freeze action error for ${userId}:`, err));
+        }
+
+        logAuditAction(
+          isFreeze ? AuditAction.USER_BULK_WALLET_FREEZE : AuditAction.USER_BULK_WALLET_UNFREEZE,
+          {
+            count,
+            userIds: selectedUserIds,
+            reason: freezeReason,
+            adminEmail: user.email
+          }
+        );
+
+        toast({
+          title: isFreeze ? `Wallets Frozen (${count})` : `Wallets Restored (${count})`,
+          description: isFreeze 
+            ? `Applied security wallet freeze to ${count} user accounts.` 
+            : `Lifted wallet freeze for ${count} user accounts.`,
+          className: isFreeze ? "bg-amber-600 text-white" : "bg-green-600 text-white"
+        });
+      } else if (action === 'release_restrictions') {
+        for (const userId of selectedUserIds) {
+          const targetUser = platformUsers?.find((u: any) => u.id === userId);
+          const targetUserEmail = targetUser?.email || 'partner@call-on-demand.com';
+
+          updateDocumentNonBlocking(doc(firestore, 'users', userId), {
+            status: 'Active',
+            isRestricted: false,
+            restrictedAt: null,
+            restrictionReason: null,
+            isWalletFrozen: false,
+            walletFreezeReason: null,
+            walletFrozenAt: null,
+            updatedAt: new Date().toISOString()
+          });
+
+          toggleUserWalletFreeze({
+            userId,
+            userEmail: targetUserEmail,
+            isFrozen: false,
+            adminEmail: user.email,
+            adminUid: user.uid
+          }).catch(err => console.warn(`Bulk release restriction error for ${userId}:`, err));
+        }
+
+        logAuditAction(AuditAction.USER_BULK_RELEASE_RESTRICTIONS, {
+          count,
+          userIds: selectedUserIds,
+          adminEmail: user.email,
+          reason: reason || 'Administrative bulk release of restrictions'
+        });
+
+        toast({
+          title: `Restrictions Released (${count})`,
+          description: `Restored Active status and lifted wallet restrictions for ${count} user accounts.`,
+          className: "bg-green-600 text-white"
+        });
+      } else if (action === 'restrict') {
+        const restrictionReason = reason || 'Administrative bulk restriction';
+
+        for (const userId of selectedUserIds) {
+          updateDocumentNonBlocking(doc(firestore, 'users', userId), {
+            status: 'Restricted',
+            isRestricted: true,
+            restrictedAt: new Date().toISOString(),
+            restrictionReason,
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        logAuditAction(AuditAction.USER_BULK_RESTRICTION, {
+          count,
+          userIds: selectedUserIds,
+          reason: restrictionReason,
+          adminEmail: user.email
+        });
+
+        toast({
+          title: `Users Restricted (${count})`,
+          description: `Applied restricted status to ${count} partner accounts.`,
+          variant: "destructive"
+        });
+      }
+
+      setIsBulkConfirmDialogOpen(false);
+      setIsBulkActionDialogOpen(false);
+      setSelectedUserIds([]);
+      setBulkActionType(null);
+      setBulkActionReason("");
+      setBulkConfirmPhrase("");
+      setBulkConfirmAcknowledged(false);
+    } catch (err: any) {
+      console.error("Bulk user action error:", err);
+      toast({
+        title: "Bulk Operation Failed",
+        description: err?.message || "Internal error during bulk update",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingBulkUserAction(false);
+    }
+  };
+
+  const handleBulkAssignUnit = (unitName: string) => {
+    if (!firestore || selectedUserIds.length === 0) return;
+    
+    for (const userId of selectedUserIds) {
+      updateDocumentNonBlocking(doc(firestore, 'users', userId), {
+        assignedUnit: unitName,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    logAuditAction(AuditAction.USER_BULK_UNIT_ASSIGN, {
+      count: selectedUserIds.length,
+      userIds: selectedUserIds,
+      unitName
+    });
+
+    toast({
+      title: "Hub Assigned",
+      description: `Assigned ${selectedUserIds.length} users to the ${unitName} operational unit.`
+    });
+    setSelectedUserIds([]);
+  };
+
   if (isAdminDocLoading || !mounted) {
     return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin h-12 w-12 text-primary" /></div>;
   }
@@ -1145,19 +1568,38 @@ export default function SuperAdminPage() {
 
         {/* WALLET FUNDING & CLEARANCE HUB TAB */}
         <TabsContent value="funding" className="space-y-8">
-          {/* Institutional Security Notice */}
-          <div className="bg-amber-500/10 border-2 border-amber-500/30 rounded-[2rem] p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          {/* Emergency Warning Banner if active */}
+          {govForm.emergencyWalletLockdown && (
+            <div className="bg-red-600 text-white rounded-[2rem] p-6 shadow-xl flex items-center gap-4 animate-pulse">
+              <ShieldAlert className="h-8 w-8 shrink-0" />
+              <div className="space-y-0.5">
+                <h3 className="font-black text-sm uppercase tracking-wider">EMERGENCY WALLET LOCKDOWN IS ACTIVE</h3>
+                <p className="text-xs opacity-90 font-medium">
+                  All inward and outward wallet transactions are currently frozen across the system by administrative override.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Institutional Top Bar */}
+          <div className="bg-card border-2 rounded-[2rem] p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
             <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-2xl bg-amber-500/20 flex items-center justify-center shrink-0 text-amber-600">
+              <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0 text-primary">
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-black text-sm uppercase tracking-wider text-amber-950">Monnify Funding Gatekeeper (Manual Approval Active)</h3>
-                  <Badge className="bg-amber-600 text-white font-black text-[8px] uppercase border-none">Auto-Credit Disabled</Badge>
+                  <h3 className="font-black text-base uppercase tracking-wider text-foreground">Wallet Governance & Clearance Hub</h3>
+                  <Badge className={cn(
+                    "text-white font-black text-[9px] uppercase border-none",
+                    govForm.approvalMode === 'FLEXIBLE_THRESHOLD' ? "bg-blue-600" :
+                    govForm.approvalMode === 'INSTANT_AUTO' ? "bg-green-600" : "bg-amber-600"
+                  )}>
+                    Mode: {govForm.approvalMode?.replace('_', ' ')}
+                  </Badge>
                 </div>
-                <p className="text-xs text-amber-900/80 font-medium max-w-2xl leading-relaxed">
-                  Incoming Monnify payments are held in the verification queue. Authorize legitimate deposits below to increment partner wallet balances, or reject fraudulent/duplicate references.
+                <p className="text-xs text-muted-foreground font-medium max-w-2xl leading-relaxed">
+                  Manage flexible auto-approval limits, configure fraud-prevention ceilings, and review incoming Monnify payment telemetry.
                 </p>
               </div>
             </div>
@@ -1178,56 +1620,333 @@ export default function SuperAdminPage() {
             </div>
           </div>
 
+          {/* WALLET GOVERNANCE & APPROVAL ENGINE CONTROLS */}
+          <Card className="rounded-[2.5rem] border-2 shadow-md overflow-hidden bg-card">
+            <CardHeader className="bg-muted/20 p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2">
+                  <SlidersHorizontal className="h-5 w-5 text-primary" /> Wallet Governance & Approval Rules
+                </CardTitle>
+                <CardDescription className="text-xs font-semibold">
+                  Configure flexible thresholds, maximum transaction ceilings, and security transaction block flags.
+                </CardDescription>
+              </div>
+
+              <Button
+                onClick={handleSaveWalletGovernance}
+                disabled={isSavingGov}
+                className="h-10 px-5 rounded-xl font-black text-xs uppercase bg-primary hover:bg-primary/90 text-white gap-2 shadow-sm shrink-0"
+              >
+                {isSavingGov ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Save Governance Rules
+              </Button>
+            </CardHeader>
+
+            <CardContent className="p-6 space-y-6">
+              {/* Approval Mode Selection */}
+              <div className="space-y-3">
+                <Label className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-primary" /> Funding Approval Mode
+                </Label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div
+                    onClick={() => setGovForm(prev => ({ ...prev, approvalMode: 'FLEXIBLE_THRESHOLD' }))}
+                    className={cn(
+                      "p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between",
+                      govForm.approvalMode === 'FLEXIBLE_THRESHOLD'
+                        ? "border-blue-600 bg-blue-50/50 dark:bg-blue-950/20 shadow-sm ring-1 ring-blue-600"
+                        : "border-muted hover:border-muted-foreground/30 bg-card"
+                    )}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-xs uppercase text-blue-900 dark:text-blue-200">Flexible Threshold (Recommended)</span>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase bg-blue-100 text-blue-800 border-none">Hybrid</Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground font-medium leading-normal">
+                        Auto-approves and credits deposits ≤ ₦{Number(govForm.approvalThreshold || 100000).toLocaleString()}. Holds transactions exceeding threshold for manual admin review.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setGovForm(prev => ({ ...prev, approvalMode: 'MANUAL_ALL' }))}
+                    className={cn(
+                      "p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between",
+                      govForm.approvalMode === 'MANUAL_ALL'
+                        ? "border-amber-600 bg-amber-50/50 dark:bg-amber-950/20 shadow-sm ring-1 ring-amber-600"
+                        : "border-muted hover:border-muted-foreground/30 bg-card"
+                    )}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-xs uppercase text-amber-900 dark:text-amber-200">Strict Manual Clearance</span>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase bg-amber-100 text-amber-800 border-none">100% Held</Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground font-medium leading-normal">
+                        Holds all incoming payments in the queue for manual admin verification before any balance increment.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setGovForm(prev => ({ ...prev, approvalMode: 'INSTANT_AUTO' }))}
+                    className={cn(
+                      "p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between",
+                      govForm.approvalMode === 'INSTANT_AUTO'
+                        ? "border-green-600 bg-green-50/50 dark:bg-green-950/20 shadow-sm ring-1 ring-green-600"
+                        : "border-muted hover:border-muted-foreground/30 bg-card"
+                    )}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-xs uppercase text-green-900 dark:text-green-200">Instant Auto-Approval</span>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase bg-green-100 text-green-800 border-none">Fastest</Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground font-medium leading-normal">
+                        Instantly credits all valid gateway-verified payments directly up to the maximum single transaction limit.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Financial Limits Grid */}
+              <div className="space-y-3">
+                <Label className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Landmark className="h-4 w-4 text-primary" /> Financial Limits & Ceilings
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-muted/20 p-4 rounded-2xl border space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-foreground block">
+                      Approval Threshold (₦ NGN)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={govForm.approvalThreshold || ''}
+                      onChange={(e) => setGovForm(prev => ({ ...prev, approvalThreshold: Number(e.target.value) }))}
+                      placeholder="100000"
+                      className="h-10 rounded-xl border-2 font-black text-sm bg-background"
+                    />
+                    <span className="text-[9px] text-muted-foreground font-medium block">
+                      Deposits exceeding this require manual admin approval
+                    </span>
+                  </div>
+
+                  <div className="bg-muted/20 p-4 rounded-2xl border space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-foreground block">
+                      Max Single Transaction (₦ NGN)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={govForm.maxTransactionLimit || ''}
+                      onChange={(e) => setGovForm(prev => ({ ...prev, maxTransactionLimit: Number(e.target.value) }))}
+                      placeholder="2000000"
+                      className="h-10 rounded-xl border-2 font-black text-sm bg-background"
+                    />
+                    <span className="text-[9px] text-muted-foreground font-medium block">
+                      Maximum cap allowed for any single transaction
+                    </span>
+                  </div>
+
+                  <div className="bg-muted/20 p-4 rounded-2xl border space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-foreground block">
+                      Daily Spending Limit (₦ NGN)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={govForm.dailySpendingLimit || ''}
+                      onChange={(e) => setGovForm(prev => ({ ...prev, dailySpendingLimit: Number(e.target.value) }))}
+                      placeholder="5000000"
+                      className="h-10 rounded-xl border-2 font-black text-sm bg-background"
+                    />
+                    <span className="text-[9px] text-muted-foreground font-medium block">
+                      Maximum outbound 24-hour spending ceiling
+                    </span>
+                  </div>
+
+                  <div className="bg-muted/20 p-4 rounded-2xl border space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-foreground block">
+                      Minimum Deposit Floor (₦ NGN)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={govForm.minFundingAmount || ''}
+                      onChange={(e) => setGovForm(prev => ({ ...prev, minFundingAmount: Number(e.target.value) }))}
+                      placeholder="100"
+                      className="h-10 rounded-xl border-2 font-black text-sm bg-background"
+                    />
+                    <span className="text-[9px] text-muted-foreground font-medium block">
+                      Minimum allowable deposit value
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security & Transaction Blocking Controls */}
+              <div className="space-y-3 pt-2">
+                <Label className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-primary" /> Security Switches & Transaction Blocking Rules
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className={cn(
+                    "p-4 rounded-2xl border-2 flex items-center justify-between gap-3 transition-colors",
+                    govForm.emergencyWalletLockdown ? "bg-red-50/80 border-red-300 dark:bg-red-950/30" : "bg-card border-muted"
+                  )}>
+                    <div className="space-y-0.5 pr-2">
+                      <span className="text-xs font-black uppercase text-red-700 dark:text-red-400 block flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Emergency Lockdown
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium block">
+                        Freeze all wallet deposits & transfers system-wide
+                      </span>
+                    </div>
+                    <Switch
+                      checked={!!govForm.emergencyWalletLockdown}
+                      onCheckedChange={(checked) => setGovForm(prev => ({ ...prev, emergencyWalletLockdown: checked }))}
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-2xl border-2 bg-card border-muted flex items-center justify-between gap-3">
+                    <div className="space-y-0.5 pr-2">
+                      <span className="text-xs font-black uppercase text-foreground block">
+                        Block New Deposits
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium block">
+                        Temporarily halt incoming Monnify funding
+                      </span>
+                    </div>
+                    <Switch
+                      checked={!!govForm.blockNewDeposits}
+                      onCheckedChange={(checked) => setGovForm(prev => ({ ...prev, blockNewDeposits: checked }))}
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-2xl border-2 bg-card border-muted flex items-center justify-between gap-3">
+                    <div className="space-y-0.5 pr-2">
+                      <span className="text-xs font-black uppercase text-foreground block">
+                        Block Withdrawals
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium block">
+                        Halt outward wallet disbursements
+                      </span>
+                    </div>
+                    <Switch
+                      checked={!!govForm.blockWithdrawals}
+                      onCheckedChange={(checked) => setGovForm(prev => ({ ...prev, blockWithdrawals: checked }))}
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-2xl border-2 bg-card border-muted flex items-center justify-between gap-3">
+                    <div className="space-y-0.5 pr-2">
+                      <span className="text-xs font-black uppercase text-foreground block">
+                        Block VAS / Utilities
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium block">
+                        Block airtime, data, cable & power purchases
+                      </span>
+                    </div>
+                    <Switch
+                      checked={!!govForm.blockVASPayments}
+                      onCheckedChange={(checked) => setGovForm(prev => ({ ...prev, blockVASPayments: checked }))}
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-2xl border-2 bg-card border-muted flex items-center justify-between gap-3 sm:col-span-2">
+                    <div className="space-y-0.5 pr-2">
+                      <span className="text-xs font-black uppercase text-foreground block">
+                        Auto-Block Suspicious Gateway Transactions
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium block">
+                        Automatically tag and block transactions that fail gateway verification or report unpaid status
+                      </span>
+                    </div>
+                    <Switch
+                      checked={!!govForm.autoBlockSuspicious}
+                      onCheckedChange={(checked) => setGovForm(prev => ({ ...prev, autoBlockSuspicious: checked }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Metric KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="rounded-[2rem] border-2 border-amber-300 bg-amber-50/50 p-6 shadow-sm flex flex-col justify-between">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <Card className="rounded-[2rem] border-2 border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-sm flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-800">Pending Authorization</span>
-                <Clock className="h-4 w-4 text-amber-600 animate-pulse" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-amber-800 dark:text-amber-300">Pending Review</span>
+                <Clock className="h-3.5 w-3.5 text-amber-600 animate-pulse" />
               </div>
-              <div className="mt-4">
-                <div className="text-3xl font-black tracking-tight text-amber-950">₦{pendingFundingTotal.toLocaleString()}</div>
-                <div className="text-[10px] font-black uppercase tracking-wider text-amber-700 mt-1">
-                  {pendingFundingCount} deposit request(s) awaiting clearance
+              <div className="mt-2">
+                <div className="text-xl font-black tracking-tight text-amber-950 dark:text-amber-100">₦{pendingFundingTotal.toLocaleString()}</div>
+                <div className="text-[9px] font-black uppercase text-amber-700 dark:text-amber-400 mt-0.5">
+                  {pendingFundingCount} requests
                 </div>
               </div>
             </Card>
 
-            <Card className="rounded-[2rem] border-2 border-green-200 bg-green-50/40 p-6 shadow-sm flex flex-col justify-between">
+            <Card className="rounded-[2rem] border-2 border-green-200 bg-green-50/40 dark:bg-green-950/20 p-4 shadow-sm flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-green-800">Total Cleared & Credited</span>
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-green-800 dark:text-green-300">Cleared & Credited</span>
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
               </div>
-              <div className="mt-4">
-                <div className="text-3xl font-black tracking-tight text-green-950">₦{approvedFundingTotal.toLocaleString()}</div>
-                <div className="text-[10px] font-black uppercase tracking-wider text-green-700 mt-1">
-                  Authorized & posted to ledger
+              <div className="mt-2">
+                <div className="text-xl font-black tracking-tight text-green-950 dark:text-green-100">₦{approvedFundingTotal.toLocaleString()}</div>
+                <div className="text-[9px] font-black uppercase text-green-700 dark:text-green-400 mt-0.5">
+                  {approvedFundingCount} approved
                 </div>
               </div>
             </Card>
 
-            <Card className="rounded-[2rem] border-2 border-red-200 bg-red-50/40 p-6 shadow-sm flex flex-col justify-between">
+            <Card className="rounded-[2rem] border-2 border-amber-200 bg-amber-50/40 dark:bg-amber-950/20 p-4 shadow-sm flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-red-800">Declined / Rejected</span>
-                <XCircle className="h-4 w-4 text-red-600" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-amber-800 dark:text-amber-300">Flagged Audit</span>
+                <Flag className="h-3.5 w-3.5 text-amber-600" />
               </div>
-              <div className="mt-4">
-                <div className="text-3xl font-black tracking-tight text-red-950">{rejectedFundingCount}</div>
-                <div className="text-[10px] font-black uppercase tracking-wider text-red-700 mt-1">
-                  Blocked from wallet balance
+              <div className="mt-2">
+                <div className="text-xl font-black tracking-tight text-amber-950 dark:text-amber-100">{flaggedFundingCount}</div>
+                <div className="text-[9px] font-black uppercase text-amber-700 dark:text-amber-400 mt-0.5">
+                  Under review
                 </div>
               </div>
             </Card>
 
-            <Card className="rounded-[2rem] border-2 bg-card p-6 shadow-sm flex flex-col justify-between">
+            <Card className="rounded-[2rem] border-2 border-red-300 bg-red-50/40 dark:bg-red-950/20 p-4 shadow-sm flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total Requests Tracked</span>
-                <Landmark className="h-4 w-4 text-primary" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-red-800 dark:text-red-300">Blocked Risk</span>
+                <ShieldAlert className="h-3.5 w-3.5 text-red-600" />
               </div>
-              <div className="mt-4">
-                <div className="text-3xl font-black tracking-tight">{fundingRequestsList?.length || 0}</div>
-                <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mt-1">
-                  Monnify Direct & Webhook Entries
+              <div className="mt-2">
+                <div className="text-xl font-black tracking-tight text-red-950 dark:text-red-100">{blockedFundingCount}</div>
+                <div className="text-[9px] font-black uppercase text-red-700 dark:text-red-400 mt-0.5">
+                  Fraud prevention
+                </div>
+              </div>
+            </Card>
+
+            <Card className="rounded-[2rem] border-2 border-muted bg-card p-4 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Declined</span>
+                <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+              <div className="mt-2">
+                <div className="text-xl font-black tracking-tight">{rejectedFundingCount}</div>
+                <div className="text-[9px] font-black uppercase text-muted-foreground mt-0.5">
+                  Rejected entries
+                </div>
+              </div>
+            </Card>
+
+            <Card className="rounded-[2rem] border-2 bg-card p-4 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total Tracked</span>
+                <Landmark className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <div className="mt-2">
+                <div className="text-xl font-black tracking-tight">{fundingRequestsList?.length || 0}</div>
+                <div className="text-[9px] font-black uppercase text-muted-foreground mt-0.5">
+                  All references
                 </div>
               </div>
             </Card>
@@ -1238,16 +1957,16 @@ export default function SuperAdminPage() {
             <CardHeader className="bg-muted/10 p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
                 <CardTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2">
-                  <History className="h-5 w-5 text-primary" /> Funding Clearance Queue
+                  <History className="h-5 w-5 text-primary" /> Funding Clearance Queue & Audit Ledger
                 </CardTitle>
                 <CardDescription className="text-xs font-semibold">
-                  Review transaction telemetry and authorize balance adjustments.
+                  Review transaction telemetry, authorize balance adjustments, or enforce security blocks.
                 </CardDescription>
               </div>
 
               {/* Status Filter Buttons */}
               <div className="flex flex-wrap items-center gap-2">
-                {['Pending Approval', 'All', 'Approved', 'Rejected'].map((status) => (
+                {['Pending Approval', 'All', 'Approved', 'Flagged', 'Blocked', 'Rejected'].map((status) => (
                   <Button
                     key={status}
                     variant={fundingStatusFilter === status ? "default" : "outline"}
@@ -1255,13 +1974,25 @@ export default function SuperAdminPage() {
                     onClick={() => setFundingStatusFilter(status)}
                     className={cn(
                       "rounded-xl h-8 px-3 text-[10px] font-black uppercase",
-                      fundingStatusFilter === status && status === 'Pending Approval' ? "bg-amber-600 hover:bg-amber-700 text-white" : ""
+                      fundingStatusFilter === status && status === 'Pending Approval' ? "bg-amber-600 hover:bg-amber-700 text-white" :
+                      fundingStatusFilter === status && status === 'Blocked' ? "bg-red-600 hover:bg-red-700 text-white" :
+                      fundingStatusFilter === status && status === 'Flagged' ? "bg-amber-600 hover:bg-amber-700 text-white" : ""
                     )}
                   >
                     {status}
                     {status === 'Pending Approval' && pendingFundingCount > 0 && (
                       <span className="ml-1.5 px-1.5 py-0.2 bg-white text-amber-800 text-[8px] font-black rounded-full">
                         {pendingFundingCount}
+                      </span>
+                    )}
+                    {status === 'Blocked' && blockedFundingCount > 0 && (
+                      <span className="ml-1.5 px-1.5 py-0.2 bg-white text-red-800 text-[8px] font-black rounded-full">
+                        {blockedFundingCount}
+                      </span>
+                    )}
+                    {status === 'Flagged' && flaggedFundingCount > 0 && (
+                      <span className="ml-1.5 px-1.5 py-0.2 bg-white text-amber-800 text-[8px] font-black rounded-full">
+                        {flaggedFundingCount}
                       </span>
                     )}
                   </Button>
@@ -1276,7 +2007,7 @@ export default function SuperAdminPage() {
                 <Input
                   value={fundingSearch}
                   onChange={(e) => setFundingSearch(e.target.value)}
-                  placeholder="Search by Payment Reference, Email, Name, or User ID..."
+                  placeholder="Search by Reference, Email, Name, User ID, or Amount..."
                   className="pl-9 h-10 rounded-xl border-2 font-medium text-xs bg-background"
                 />
               </div>
@@ -1288,7 +2019,7 @@ export default function SuperAdminPage() {
                   <TableHeader className="bg-muted/30">
                     <TableRow>
                       <TableHead className="font-black text-[10px] uppercase pl-6">Reference & Date</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Customer / Partner</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Partner / User</TableHead>
                       <TableHead className="font-black text-[10px] uppercase">Amount & Method</TableHead>
                       <TableHead className="font-black text-[10px] uppercase">Monnify Gateway</TableHead>
                       <TableHead className="font-black text-[10px] uppercase">Clearance Status</TableHead>
@@ -1314,124 +2045,206 @@ export default function SuperAdminPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredFundingRequests.map((req: any) => (
-                        <TableRow key={req.id} className="hover:bg-muted/30 transition-colors">
-                          <TableCell className="pl-6 py-4">
-                            <div className="space-y-1">
-                              <span className="font-mono font-black text-xs text-foreground block">{req.reference}</span>
-                              <div className="flex items-center gap-1.5 text-[9px] font-bold text-muted-foreground uppercase">
-                                <Clock className="h-2.5 w-2.5" />
-                                {mounted && req.createdAt ? new Date(req.createdAt).toLocaleString() : '...'}
-                              </div>
-                              {req.gatewayId && req.gatewayId !== req.reference && (
-                                <span className="text-[9px] font-mono text-muted-foreground block truncate max-w-[140px]">
-                                  GW: {req.gatewayId}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
+                      filteredFundingRequests.map((req: any) => {
+                        const targetUser = platformUsers?.find((u: any) => u.id === req.userId);
+                        const isUserFrozen = targetUser?.isWalletFrozen;
 
-                          <TableCell>
-                            <div className="space-y-0.5">
-                              <span className="font-black text-xs block">{req.userName || 'Partner'}</span>
-                              <span className="font-medium text-[11px] text-muted-foreground block">{req.userEmail}</span>
-                              <span className="font-mono text-[9px] text-muted-foreground/60 block">UID: {req.userId?.slice(0, 10)}...</span>
-                            </div>
-                          </TableCell>
-
-                          <TableCell>
-                            <div className="space-y-0.5">
-                              <span className="font-black text-sm text-green-700 block">₦{Number(req.amount || 0).toLocaleString()}</span>
-                              <Badge variant="outline" className="text-[8px] font-bold uppercase px-1.5 py-0 border-muted">
-                                {req.paymentMethod || 'Monnify Direct'}
-                              </Badge>
-                            </div>
-                          </TableCell>
-
-                          <TableCell>
-                            <div className="space-y-1">
-                              <Badge className={cn(
-                                "text-[9px] font-black uppercase border-none",
-                                req.gatewayStatus === 'PAID' ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground"
-                              )}>
-                                Monnify: {req.gatewayStatus || 'PENDING'}
-                              </Badge>
-                              <div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleLiveVerifyMonnify(req)}
-                                  disabled={isVerifyingMonnifyRef}
-                                  className="text-[9px] font-black text-primary hover:underline inline-flex items-center gap-1"
-                                >
-                                  <RefreshCw className="h-2.5 w-2.5" /> Live Re-Verify
-                                </button>
-                              </div>
-                            </div>
-                          </TableCell>
-
-                          <TableCell>
-                            {req.status === 'Pending Approval' ? (
-                              <Badge className="bg-amber-100 text-amber-800 border border-amber-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
-                                <Clock className="h-3 w-3 animate-pulse" /> Pending Approval
-                              </Badge>
-                            ) : req.status === 'Approved' ? (
-                              <div className="space-y-0.5">
-                                <Badge className="bg-green-100 text-green-800 border border-green-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
-                                  <CheckCircle2 className="h-3 w-3" /> Cleared & Credited
-                                </Badge>
-                                <span className="text-[8px] font-semibold text-muted-foreground block">
-                                  By: {req.approvedBy?.split('@')[0] || 'Admin'}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="space-y-0.5">
-                                <Badge className="bg-red-100 text-red-800 border border-red-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
-                                  <XCircle className="h-3 w-3" /> Declined
-                                </Badge>
-                                {req.rejectionReason && (
-                                  <span className="text-[8px] font-medium text-red-600 block max-w-[120px] truncate" title={req.rejectionReason}>
-                                    {req.rejectionReason}
-                                  </span>
+                        return (
+                          <TableRow key={req.id} className="hover:bg-muted/30 transition-colors">
+                            <TableCell className="pl-6 py-4">
+                              <div className="space-y-1">
+                                <span className="font-mono font-black text-xs text-foreground block">{req.reference}</span>
+                                <div className="flex items-center gap-1.5 text-[9px] font-bold text-muted-foreground uppercase">
+                                  <Clock className="h-2.5 w-2.5" />
+                                  {mounted && req.createdAt ? new Date(req.createdAt).toLocaleString() : '...'}
+                                </div>
+                                {req.approvalModeApplied && (
+                                  <Badge variant="outline" className="text-[8px] font-mono uppercase px-1.5 py-0 border-muted">
+                                    Rule: {req.approvalModeApplied}
+                                  </Badge>
                                 )}
                               </div>
-                            )}
-                          </TableCell>
+                            </TableCell>
 
-                          <TableCell className="pr-6 text-right">
-                            {req.status === 'Pending Approval' ? (
-                              <div className="flex items-center justify-end gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedFundingRequest(req);
-                                    setIsApproveDialogOpen(true);
-                                  }}
-                                  disabled={isApprovingFunding}
-                                  className="h-8 px-3 rounded-xl font-black text-[10px] uppercase bg-green-600 hover:bg-green-700 text-white gap-1.5 shadow-sm"
-                                >
-                                  <CheckCircle2 className="h-3.5 w-3.5" /> Approve & Credit
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setSelectedFundingRequest(req);
-                                    setIsRejectDialogOpen(true);
-                                  }}
-                                  disabled={isRejectingFunding}
-                                  className="h-8 px-3 rounded-xl font-black text-[10px] uppercase text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
-                                >
-                                  <Ban className="h-3.5 w-3.5" /> Decline
-                                </Button>
+                            <TableCell>
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-black text-xs block">{req.userName || 'Partner'}</span>
+                                  {isUserFrozen && (
+                                    <Badge className="bg-red-600 text-white font-black text-[7px] uppercase px-1 py-0">Frozen</Badge>
+                                  )}
+                                </div>
+                                <span className="font-medium text-[11px] text-muted-foreground block">{req.userEmail}</span>
+                                <span className="font-mono text-[9px] text-muted-foreground/60 block">UID: {req.userId?.slice(0, 10)}...</span>
                               </div>
-                            ) : (
-                              <div className="text-[10px] font-bold text-muted-foreground">
-                                {req.approvedAt || req.rejectedAt ? (mounted ? new Date(req.approvedAt || req.rejectedAt).toLocaleDateString() : '...') : 'Processed'}
+                            </TableCell>
+
+                            <TableCell>
+                              <div className="space-y-0.5">
+                                <span className="font-black text-sm text-green-700 block">₦{Number(req.amount || 0).toLocaleString()}</span>
+                                <Badge variant="outline" className="text-[8px] font-bold uppercase px-1.5 py-0 border-muted">
+                                  {req.paymentMethod || 'Monnify Direct'}
+                                </Badge>
+                                {req.exceededThreshold && (
+                                  <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[7px] font-black uppercase block w-fit mt-0.5">
+                                    Exceeded ₦{Number(govForm.approvalThreshold || 100000).toLocaleString()} Threshold
+                                  </Badge>
+                                )}
                               </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                            </TableCell>
+
+                            <TableCell>
+                              <div className="space-y-1">
+                                <Badge className={cn(
+                                  "text-[9px] font-black uppercase border-none",
+                                  req.gatewayStatus === 'PAID' ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground"
+                                )}>
+                                  Monnify: {req.gatewayStatus || 'PENDING'}
+                                </Badge>
+                                <div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleLiveVerifyMonnify(req)}
+                                    disabled={isVerifyingMonnifyRef}
+                                    className="text-[9px] font-black text-primary hover:underline inline-flex items-center gap-1"
+                                  >
+                                    <RefreshCw className="h-2.5 w-2.5" /> Live Re-Verify
+                                  </button>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell>
+                              {req.status === 'Pending Approval' ? (
+                                <Badge className="bg-amber-100 text-amber-800 border border-amber-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                  <Clock className="h-3 w-3 animate-pulse" /> Pending Approval
+                                </Badge>
+                              ) : req.status === 'Approved' ? (
+                                <div className="space-y-0.5">
+                                  <Badge className="bg-green-100 text-green-800 border border-green-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" /> Cleared & Credited
+                                  </Badge>
+                                  <span className="text-[8px] font-semibold text-muted-foreground block">
+                                    By: {req.approvedBy?.split('@')[0] || 'Admin'}
+                                  </span>
+                                </div>
+                              ) : req.status === 'Flagged' ? (
+                                <div className="space-y-0.5">
+                                  <Badge className="bg-amber-100 text-amber-800 border border-amber-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                    <Flag className="h-3 w-3" /> Flagged for Review
+                                  </Badge>
+                                  {req.flagReason && (
+                                    <span className="text-[8px] font-medium text-amber-700 block max-w-[140px] truncate" title={req.flagReason}>
+                                      {req.flagReason}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : req.status === 'Blocked' ? (
+                                <div className="space-y-0.5">
+                                  <Badge className="bg-red-100 text-red-800 border border-red-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                    <ShieldAlert className="h-3 w-3" /> Blocked (Risk)
+                                  </Badge>
+                                  {req.blockReason && (
+                                    <span className="text-[8px] font-medium text-red-700 block max-w-[140px] truncate" title={req.blockReason}>
+                                      {req.blockReason}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <Badge className="bg-gray-100 text-gray-800 border border-gray-300 font-black uppercase text-[9px] px-2 py-0.5 inline-flex items-center gap-1">
+                                    <XCircle className="h-3 w-3" /> Declined
+                                  </Badge>
+                                  {req.rejectionReason && (
+                                    <span className="text-[8px] font-medium text-red-600 block max-w-[120px] truncate" title={req.rejectionReason}>
+                                      {req.rejectionReason}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="pr-6 text-right">
+                              {req.status === 'Pending Approval' || req.status === 'Flagged' ? (
+                                <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedFundingRequest(req);
+                                      setIsApproveDialogOpen(true);
+                                    }}
+                                    disabled={isApprovingFunding}
+                                    className="h-8 px-2.5 rounded-xl font-black text-[10px] uppercase bg-green-600 hover:bg-green-700 text-white gap-1 shadow-sm"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" /> Approve
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedFundingRequest(req);
+                                      setIsFlagDialogOpen(true);
+                                    }}
+                                    className="h-8 px-2 rounded-xl font-black text-[10px] uppercase text-amber-600 border-amber-300 hover:bg-amber-50 gap-1"
+                                  >
+                                    <Flag className="h-3 w-3" /> Flag
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedFundingRequest(req);
+                                      setIsBlockDialogOpen(true);
+                                    }}
+                                    className="h-8 px-2 rounded-xl font-black text-[10px] uppercase text-red-600 border-red-300 hover:bg-red-50 gap-1"
+                                  >
+                                    <ShieldAlert className="h-3 w-3" /> Block
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setSelectedFundingRequest(req);
+                                      setIsRejectDialogOpen(true);
+                                    }}
+                                    disabled={isRejectingFunding}
+                                    className="h-8 px-2 rounded-xl font-black text-[10px] uppercase text-muted-foreground hover:text-red-600"
+                                  >
+                                    <Ban className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className="text-[10px] font-bold text-muted-foreground">
+                                    {req.approvedAt || req.rejectedAt || req.blockedAt ? (mounted ? new Date(req.approvedAt || req.rejectedAt || req.blockedAt).toLocaleDateString() : '...') : 'Processed'}
+                                  </span>
+
+                                  {targetUser && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setSelectedUserForFreeze(targetUser);
+                                        setFreezeTargetState(!isUserFrozen);
+                                        setIsFreezeWalletDialogOpen(true);
+                                      }}
+                                      className={cn(
+                                        "h-7 px-2 rounded-lg text-[9px] font-black uppercase",
+                                        isUserFrozen ? "text-green-700 hover:bg-green-50" : "text-amber-700 hover:bg-amber-50"
+                                      )}
+                                    >
+                                      {isUserFrozen ? 'Unfreeze' : 'Freeze User'}
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -1600,120 +2413,367 @@ export default function SuperAdminPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="users" className="space-y-8">
+        <TabsContent value="users" className="space-y-6">
           <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-card">
-            <CardHeader className="bg-muted/30 p-8 border-b">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                <CardTitle className="text-xl font-black uppercase tracking-tighter">Partner KYC</CardTitle>
-                <div className="flex items-center gap-4 w-full md:w-auto">
-                  <div className="relative flex-1 md:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} placeholder="Search..." className="h-10 pl-9 rounded-xl border-2 text-xs" />
-                  </div>
-                  <Button size="sm" onClick={() => setIsRegisteringUser(true)} className="rounded-xl font-black h-10 px-4 uppercase text-[9px] gap-2 whitespace-nowrap">
-                    <Plus className="h-4 w-4" /> Register New
+            <CardHeader className="bg-muted/30 p-6 md:p-8 border-b space-y-4">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <CardTitle className="text-xl font-black uppercase tracking-tighter flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" /> Partner KYC & User Management
+                  </CardTitle>
+                  <CardDescription className="text-xs font-semibold mt-0.5">
+                    Search, filter, inspect dossiers, manage compliance, and execute bulk wallet actions.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <Button size="sm" onClick={() => setIsRegisteringUser(true)} className="rounded-xl font-black h-10 px-4 uppercase text-[9px] gap-2 whitespace-nowrap bg-primary shadow-sm">
+                    <Plus className="h-4 w-4" /> Register New User
                   </Button>
                 </div>
               </div>
+
+              {/* Filters Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                <div className="relative sm:col-span-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input 
+                    value={userSearch} 
+                    onChange={(e) => setUserSearch(e.target.value)} 
+                    placeholder="Search by name, email, role, or hub..." 
+                    className="h-10 pl-9 rounded-xl border-2 text-xs font-semibold" 
+                  />
+                </div>
+                <div>
+                  <Select value={userRoleFilter} onValueChange={setUserRoleFilter}>
+                    <SelectTrigger className="h-10 rounded-xl border-2 font-bold text-xs">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>Role: {userRoleFilter}</span>
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl shadow-xl">
+                      <SelectItem value="All" className="text-xs font-bold">All Roles</SelectItem>
+                      <SelectItem value="Customer" className="text-xs font-bold">Customer</SelectItem>
+                      <SelectItem value="Agent" className="text-xs font-bold">Agent</SelectItem>
+                      <SelectItem value="Operator" className="text-xs font-bold">Operator</SelectItem>
+                      <SelectItem value="Admin" className="text-xs font-bold text-red-600">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Select value={userStatusFilter} onValueChange={setUserStatusFilter}>
+                    <SelectTrigger className="h-10 rounded-xl border-2 font-bold text-xs">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>Status: {userStatusFilter}</span>
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl shadow-xl">
+                      <SelectItem value="All" className="text-xs font-bold">All Statuses</SelectItem>
+                      <SelectItem value="Active" className="text-xs font-bold text-green-600">Active Only</SelectItem>
+                      <SelectItem value="Frozen" className="text-xs font-bold text-amber-600">Frozen Wallets</SelectItem>
+                      <SelectItem value="Restricted" className="text-xs font-bold text-red-600">Restricted Accounts</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Dynamic Bulk Action Toolbar */}
+              {selectedUserIds.length > 0 && (
+                <div className="bg-primary/10 border-2 border-primary/20 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-2.5">
+                    <Badge className="bg-primary text-white font-black px-3 py-1 text-[10px] uppercase tracking-wider shadow-sm">
+                      {selectedUserIds.length} Selected
+                    </Badge>
+                    <span className="text-xs font-bold text-foreground hidden sm:inline">
+                      Bulk operations for selected users:
+                    </span>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={toggleAllUsers} 
+                      className="h-7 px-2 text-[10px] font-black uppercase text-muted-foreground hover:text-foreground"
+                    >
+                      {selectedUserIds.length === filteredUsers.length ? "Deselect All" : `Select All (${filteredUsers.length})`}
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={clearUserSelection} 
+                      className="h-7 px-2 text-[10px] font-black uppercase text-muted-foreground hover:text-foreground"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openBulkUserActionDialog('freeze')}
+                      className="h-8 rounded-xl text-[10px] font-black uppercase gap-1.5 border-amber-500/50 text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/30 hover:bg-amber-100"
+                    >
+                      <Lock className="h-3.5 w-3.5" /> Freeze Wallets
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openBulkUserActionDialog('unfreeze')}
+                      className="h-8 rounded-xl text-[10px] font-black uppercase gap-1.5 border-green-500/50 text-green-700 dark:text-green-300 bg-green-50/70 dark:bg-green-950/30 hover:bg-green-100"
+                    >
+                      <Unlock className="h-3.5 w-3.5" /> Unfreeze Wallets
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openBulkUserActionDialog('release_restrictions')}
+                      className="h-8 rounded-xl text-[10px] font-black uppercase gap-1.5 border-blue-500/50 text-blue-700 dark:text-blue-300 bg-blue-50/70 dark:bg-blue-950/30 hover:bg-blue-100"
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" /> Release Restrictions
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openBulkUserActionDialog('restrict')}
+                      className="h-8 rounded-xl text-[10px] font-black uppercase gap-1.5 border-red-500/50 text-red-700 dark:text-red-300 bg-red-50/70 dark:bg-red-950/30 hover:bg-red-100"
+                    >
+                      <UserX className="h-3.5 w-3.5" /> Restrict
+                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-8 rounded-xl text-[10px] font-black uppercase gap-1.5 border-2">
+                          <Building2 className="h-3.5 w-3.5" /> Hub <SlidersHorizontal className="h-3 w-3 opacity-60" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="rounded-xl shadow-xl">
+                        <DropdownMenuItem onClick={() => handleBulkAssignUnit('General')} className="text-xs font-bold">
+                          General
+                        </DropdownMenuItem>
+                        {units?.map((unit: any) => (
+                          <DropdownMenuItem key={unit.id} onClick={() => handleBulkAssignUnit(unit.name)} className="text-xs font-bold">
+                            {unit.name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={clearUserSelection}
+                      className="h-8 w-8 rounded-xl text-muted-foreground hover:text-foreground"
+                      title="Clear Selection"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               <Table>
                 <TableHeader className="bg-muted/10 h-14">
                   <TableRow>
-                    <TableHead className="pl-8 font-black uppercase text-[9px]">Identity</TableHead>
+                    <TableHead className="w-12 pl-6">
+                      <Checkbox 
+                        checked={filteredUsers.length > 0 && selectedUserIds.length === filteredUsers.length} 
+                        onCheckedChange={toggleAllUsers} 
+                        aria-label="Select all users" 
+                      />
+                    </TableHead>
+                    <TableHead className="font-black uppercase text-[9px]">Identity & Account</TableHead>
                     <TableHead className="font-black uppercase text-[9px]">Role</TableHead>
                     <TableHead className="font-black uppercase text-[9px]">Hub</TableHead>
                     <TableHead className="font-black uppercase text-[9px]">Company KYC</TableHead>
-                    <TableHead className="pr-8 text-right font-black uppercase text-[9px]">Action</TableHead>
+                    <TableHead className="font-black uppercase text-[9px]">Wallet & Restrictions</TableHead>
+                    <TableHead className="pr-6 text-right font-black uppercase text-[9px]">Quick Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((u: any) => (
-                    <TableRow key={u.id}>
-                      <TableCell className="pl-8 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            "h-10 w-10 rounded-xl flex items-center justify-center font-black text-white text-[10px] uppercase shadow-sm transition-transform hover:scale-105",
-                            u.role === 'Admin' ? "bg-red-600" : 
-                            u.role === 'Operator' ? "bg-blue-600" :
-                            u.role === 'Agent' ? "bg-green-600" : "bg-primary"
-                          )}>
-                            {u.firstName?.[0]}{u.lastName?.[0]}
-                          </div>
-                          <div>
-                            <div className="font-black text-[11px] leading-tight flex items-center gap-2">
-                              {u.firstName} {u.lastName}
-                              {u.role === 'Admin' && <Crown className="h-3 w-3 text-red-600" />}
-                            </div>
-                            <div className="text-[9px] text-muted-foreground font-bold opacity-70">{u.email}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Select value={u.role || 'Customer'} onValueChange={(val) => initiateRoleChange(u, val)}>
-                          <SelectTrigger className={cn(
-                            "h-9 w-28 rounded-xl border-2 font-black uppercase text-[8px] transition-colors",
-                            u.role === 'Admin' ? "border-red-600/30 text-red-600" :
-                            u.role === 'Operator' ? "border-blue-600/30 text-blue-600" :
-                            u.role === 'Agent' ? "border-green-600/30 text-green-600" : "border-primary/30"
-                          )}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl shadow-2xl border-2">
-                            <SelectItem value="Customer" className="text-[10px] font-black uppercase">Customer</SelectItem>
-                            <SelectItem value="Agent" className="text-[10px] font-black uppercase">Agent</SelectItem>
-                            <SelectItem value="Operator" className="text-[10px] font-black uppercase">Operator</SelectItem>
-                            <SelectItem value="Admin" className="text-[10px] font-black uppercase text-red-600">Admin</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select value={u.assignedUnit || 'General'} onValueChange={(val) => handleUpdateUserKYC(u.id, { assignedUnit: val })}>
-                          <SelectTrigger className="h-8 w-32 rounded-lg border-2 font-black text-[8px]"><SelectValue /></SelectTrigger>
-                          <SelectContent className="rounded-xl shadow-xl">
-                            <SelectItem value="General" className="text-[10px] font-bold">General</SelectItem>
-                            {units?.map(unit => <SelectItem key={unit.id} value={unit.name} className="text-[10px] font-bold">{unit.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        {u.companyKyc?.businessName ? (
-                          <div className="flex items-center gap-2">
-                            <div>
-                              <div className="font-bold text-xs truncate max-w-[140px]">{u.companyKyc.businessName}</div>
-                              <div className="text-[9px] font-mono text-muted-foreground">{u.companyKyc.rcNumber}</div>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSelectedCompanyKycUser(u)}
-                              className={cn(
-                                "h-7 rounded-lg text-[9px] font-black uppercase px-2 gap-1 border-2",
-                                u.companyKyc.status === 'Verified' ? "border-green-500/40 text-green-700 bg-green-50/50" :
-                                u.companyKyc.status === 'Rejected' ? "border-red-500/40 text-red-700 bg-red-50/50" :
-                                "border-amber-500/40 text-amber-700 bg-amber-50/50"
-                              )}
-                            >
-                              <Building2 className="h-3 w-3" />
-                              {u.companyKyc.status === 'Verified' ? 'Verified' : u.companyKyc.status === 'Rejected' ? 'Rejected' : 'Review'}
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button 
-                            size="sm" 
-                            variant="ghost" 
-                            onClick={() => setSelectedCompanyKycUser(u)}
-                            className="h-7 text-[9px] font-bold text-muted-foreground/60 uppercase hover:text-foreground"
-                          >
-                            Add Company KYC
-                          </Button>
-                        )}
-                      </TableCell>
-                      <TableCell className="pr-8 text-right">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500" onClick={() => handleUpdateUserKYC(u.id, { status: 'Restricted' })}><UserX className="h-4 w-4" /></Button>
+                  {filteredUsers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="h-32 text-center text-muted-foreground text-xs font-semibold">
+                        No partner accounts matching current filter criteria.
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    filteredUsers.map((u: any) => {
+                      const isSelected = selectedUserIds.includes(u.id);
+                      const isFrozen = !!u.isWalletFrozen;
+                      const isRestricted = u.status === 'Restricted' || !!u.isRestricted;
+
+                      return (
+                        <TableRow 
+                          key={u.id}
+                          className={cn(
+                            "transition-colors",
+                            isSelected && "bg-primary/5 dark:bg-primary/10"
+                          )}
+                        >
+                          <TableCell className="w-12 pl-6 py-4">
+                            <Checkbox 
+                              checked={isSelected} 
+                              onCheckedChange={() => toggleUserSelection(u.id)} 
+                              aria-label={`Select user ${u.firstName} ${u.lastName}`} 
+                            />
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                "h-10 w-10 rounded-xl flex items-center justify-center font-black text-white text-[10px] uppercase shadow-sm transition-transform hover:scale-105 shrink-0",
+                                u.role === 'Admin' ? "bg-red-600" : 
+                                u.role === 'Operator' ? "bg-blue-600" :
+                                u.role === 'Agent' ? "bg-green-600" : "bg-primary"
+                              )}>
+                                {u.firstName?.[0]}{u.lastName?.[0]}
+                              </div>
+                              <div>
+                                <div className="font-black text-[11px] leading-tight flex items-center gap-2">
+                                  {u.firstName} {u.lastName}
+                                  {u.role === 'Admin' && <Crown className="h-3 w-3 text-red-600" />}
+                                  {isRestricted && (
+                                    <Badge variant="destructive" className="px-1.5 py-0 text-[8px] font-black uppercase">
+                                      Restricted
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-[9px] text-muted-foreground font-bold opacity-70 font-mono">{u.email}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Select value={u.role || 'Customer'} onValueChange={(val) => initiateRoleChange(u, val)}>
+                              <SelectTrigger className={cn(
+                                "h-9 w-28 rounded-xl border-2 font-black uppercase text-[8px] transition-colors",
+                                u.role === 'Admin' ? "border-red-600/30 text-red-600" :
+                                u.role === 'Operator' ? "border-blue-600/30 text-blue-600" :
+                                u.role === 'Agent' ? "border-green-600/30 text-green-600" : "border-primary/30"
+                              )}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl shadow-2xl border-2">
+                                <SelectItem value="Customer" className="text-[10px] font-black uppercase">Customer</SelectItem>
+                                <SelectItem value="Agent" className="text-[10px] font-black uppercase">Agent</SelectItem>
+                                <SelectItem value="Operator" className="text-[10px] font-black uppercase">Operator</SelectItem>
+                                <SelectItem value="Admin" className="text-[10px] font-black uppercase text-red-600">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Select value={u.assignedUnit || 'General'} onValueChange={(val) => handleUpdateUserKYC(u.id, { assignedUnit: val })}>
+                              <SelectTrigger className="h-8 w-28 rounded-lg border-2 font-black text-[8px]"><SelectValue /></SelectTrigger>
+                              <SelectContent className="rounded-xl shadow-xl">
+                                <SelectItem value="General" className="text-[10px] font-bold">General</SelectItem>
+                                {units?.map((unit: any) => <SelectItem key={unit.id} value={unit.name} className="text-[10px] font-bold">{unit.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            {u.companyKyc?.businessName ? (
+                              <div className="flex items-center gap-2">
+                                <div>
+                                  <div className="font-bold text-xs truncate max-w-[130px]">{u.companyKyc.businessName}</div>
+                                  <div className="text-[9px] font-mono text-muted-foreground">{u.companyKyc.rcNumber}</div>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setSelectedCompanyKycUser(u)}
+                                  className={cn(
+                                    "h-7 rounded-lg text-[9px] font-black uppercase px-2 gap-1 border-2",
+                                    u.companyKyc.status === 'Verified' ? "border-green-500/40 text-green-700 bg-green-50/50" :
+                                    u.companyKyc.status === 'Rejected' ? "border-red-500/40 text-red-700 bg-red-50/50" :
+                                    "border-amber-500/40 text-amber-700 bg-amber-50/50"
+                                  )}
+                                >
+                                  <Building2 className="h-3 w-3" />
+                                  {u.companyKyc.status === 'Verified' ? 'Verified' : u.companyKyc.status === 'Rejected' ? 'Rejected' : 'Review'}
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                onClick={() => setSelectedCompanyKycUser(u)}
+                                className="h-7 text-[9px] font-bold text-muted-foreground/60 uppercase hover:text-foreground"
+                              >
+                                Add Company KYC
+                              </Button>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              {isFrozen ? (
+                                <div className="flex items-center gap-1.5">
+                                  <Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[9px] font-black uppercase gap-1">
+                                    <Lock className="h-3 w-3 text-amber-700" /> Wallet Frozen
+                                  </Badge>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <Badge className="bg-green-100 text-green-800 border-green-300 text-[9px] font-black uppercase gap-1">
+                                    <Unlock className="h-3 w-3 text-green-700" /> Wallet Active
+                                  </Badge>
+                                </div>
+                              )}
+                              {u.walletFreezeReason && isFrozen && (
+                                <div className="text-[8px] font-medium text-muted-foreground truncate max-w-[150px]" title={u.walletFreezeReason}>
+                                  Note: {u.walletFreezeReason}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="pr-6 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title={isFrozen ? "Unfreeze User Wallet" : "Freeze User Wallet"}
+                                onClick={() => {
+                                  setSelectedUserForFreeze(u);
+                                  setFreezeTargetState(!isFrozen);
+                                  setIsFreezeWalletDialogOpen(true);
+                                }}
+                                className={cn(
+                                  "h-8 px-2 rounded-lg text-[9px] font-black uppercase gap-1",
+                                  isFrozen ? "text-amber-600 hover:bg-amber-50" : "text-muted-foreground hover:text-amber-600"
+                                )}
+                              >
+                                {isFrozen ? <Lock className="h-3.5 w-3.5 text-amber-600" /> : <Unlock className="h-3.5 w-3.5" />}
+                                {isFrozen ? "Frozen" : "Freeze"}
+                              </Button>
+
+                              {isRestricted ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title="Release Restrictions"
+                                  className="h-8 px-2 rounded-lg text-[9px] font-black uppercase text-green-600 hover:bg-green-50 gap-1"
+                                  onClick={() => handleUpdateUserKYC(u.id, { status: 'Active', isRestricted: false, restrictionReason: null })}
+                                >
+                                  <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Release
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Restrict User Account"
+                                  className="h-8 w-8 rounded-lg text-red-500 hover:bg-red-50"
+                                  onClick={() => handleUpdateUserKYC(u.id, { status: 'Restricted', isRestricted: true, restrictionReason: 'Manual single restriction' })}
+                                >
+                                  <UserX className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -3276,6 +4336,454 @@ export default function SuperAdminPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* BLOCK TRANSACTION DIALOG */}
+      <Dialog open={isBlockDialogOpen} onOpenChange={setIsBlockDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-2 shadow-2xl p-6">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2 text-red-700">
+              <ShieldAlert className="h-5 w-5" /> Block Suspicious Transaction
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold">
+              Blocking halts clearance, tags this transaction as prohibited fraud risk, and prevents wallet crediting.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedFundingRequest && (
+            <div className="space-y-4 py-3">
+              <div className="bg-red-50/60 p-4 rounded-2xl border border-red-200 space-y-2 text-xs text-red-950">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-red-800 uppercase text-[10px]">Reference:</span>
+                  <span className="font-mono font-black">{selectedFundingRequest.reference}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-red-800 uppercase text-[10px]">Amount:</span>
+                  <span className="font-black">₦{Number(selectedFundingRequest.amount || 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-red-800 uppercase text-[10px]">Customer:</span>
+                  <span className="font-semibold">{selectedFundingRequest.userEmail}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase text-muted-foreground">Block Reason / Security Flag</Label>
+                <Input
+                  value={blockReasonInput}
+                  onChange={(e) => setBlockReasonInput(e.target.value)}
+                  placeholder="e.g. Unverified chargeback, forged receipt, gateway mismatch"
+                  className="h-10 rounded-xl border-2 font-medium text-xs"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsBlockDialogOpen(false)}
+              disabled={isProcessingBlock}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleBlockFunding(selectedFundingRequest)}
+              disabled={isProcessingBlock || !selectedFundingRequest}
+              className="rounded-xl font-black text-xs uppercase bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm"
+            >
+              {isProcessingBlock ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+              Block Transaction
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* FLAG TRANSACTION DIALOG */}
+      <Dialog open={isFlagDialogOpen} onOpenChange={setIsFlagDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-2 shadow-2xl p-6">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2 text-amber-700">
+              <Flag className="h-5 w-5" /> Flag Transaction for Audit Review
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold">
+              Tagging for compliance review will pause auto-processing and highlight this entry for investigative clearance.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedFundingRequest && (
+            <div className="space-y-4 py-3">
+              <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200 space-y-2 text-xs text-amber-950">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-amber-800 uppercase text-[10px]">Reference:</span>
+                  <span className="font-mono font-black">{selectedFundingRequest.reference}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-amber-800 uppercase text-[10px]">Amount:</span>
+                  <span className="font-black">₦{Number(selectedFundingRequest.amount || 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-amber-800 uppercase text-[10px]">User:</span>
+                  <span className="font-semibold">{selectedFundingRequest.userEmail}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase text-muted-foreground">Compliance / Audit Investigation Note</Label>
+                <Input
+                  value={flagReasonInput}
+                  onChange={(e) => setFlagReasonInput(e.target.value)}
+                  placeholder="e.g. Velocity anomaly, bank confirmation needed"
+                  className="h-10 rounded-xl border-2 font-medium text-xs"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsFlagDialogOpen(false)}
+              disabled={isProcessingFlag}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleFlagFunding(selectedFundingRequest)}
+              disabled={isProcessingFlag || !selectedFundingRequest}
+              className="rounded-xl font-black text-xs uppercase bg-amber-600 hover:bg-amber-700 text-white gap-2 shadow-sm"
+            >
+              {isProcessingFlag ? <Loader2 className="h-4 w-4 animate-spin" /> : <Flag className="h-4 w-4" />}
+              Apply Flag
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* FREEZE / RESTRICT USER WALLET DIALOG */}
+      <Dialog open={isFreezeWalletDialogOpen} onOpenChange={setIsFreezeWalletDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-2 shadow-2xl p-6">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2 text-foreground">
+              {freezeTargetState ? <Lock className="h-5 w-5 text-amber-600" /> : <Unlock className="h-5 w-5 text-green-600" />}
+              {freezeTargetState ? 'Freeze User Wallet' : 'Unfreeze & Restore User Wallet'}
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold">
+              {freezeTargetState 
+                ? 'Freezing will block new deposits, withdrawals, and value-added service transfers for this user account.'
+                : 'Restoring will lift restrictions and allow normal wallet operations.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedUserForFreeze && (
+            <div className="space-y-4 py-3">
+              <div className="bg-muted/50 p-4 rounded-2xl border space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-muted-foreground uppercase text-[10px]">Target User:</span>
+                  <span className="font-black">{selectedUserForFreeze.firstName || ''} {selectedUserForFreeze.lastName || ''} ({selectedUserForFreeze.email})</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-muted-foreground uppercase text-[10px]">User ID:</span>
+                  <span className="font-mono text-[10px]">{selectedUserForFreeze.id}</span>
+                </div>
+              </div>
+
+              {freezeTargetState && (
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase text-muted-foreground">Freeze Reason / Notice to User</Label>
+                  <Input
+                    value={freezeReasonInput}
+                    onChange={(e) => setFreezeReasonInput(e.target.value)}
+                    placeholder="e.g. Account security audit pending KYC verification"
+                    className="h-10 rounded-xl border-2 font-medium text-xs"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsFreezeWalletDialogOpen(false)}
+              disabled={isProcessingFreeze}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleExecuteWalletFreeze}
+              disabled={isProcessingFreeze || !selectedUserForFreeze}
+              className={cn(
+                "rounded-xl font-black text-xs uppercase text-white gap-2 shadow-sm",
+                freezeTargetState ? "bg-amber-600 hover:bg-amber-700" : "bg-green-600 hover:bg-green-700"
+              )}
+            >
+              {isProcessingFreeze ? <Loader2 className="h-4 w-4 animate-spin" /> : freezeTargetState ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+              {freezeTargetState ? 'Freeze Wallet' : 'Restore Wallet'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* BULK USER MANAGEMENT ACTION DIALOG */}
+      <Dialog open={isBulkActionDialogOpen} onOpenChange={setIsBulkActionDialogOpen}>
+        <DialogContent className="sm:max-w-lg rounded-[2.5rem] border-2 shadow-2xl p-6">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-black uppercase tracking-tight flex items-center gap-2">
+              {bulkActionType === 'freeze' && <Lock className="h-5 w-5 text-amber-600" />}
+              {bulkActionType === 'unfreeze' && <Unlock className="h-5 w-5 text-green-600" />}
+              {bulkActionType === 'release_restrictions' && <ShieldCheck className="h-5 w-5 text-blue-600" />}
+              {bulkActionType === 'restrict' && <UserX className="h-5 w-5 text-red-600" />}
+              
+              {bulkActionType === 'freeze' && `Bulk Freeze Wallets (${selectedUserIds.length} Users)`}
+              {bulkActionType === 'unfreeze' && `Bulk Unfreeze Wallets (${selectedUserIds.length} Users)`}
+              {bulkActionType === 'release_restrictions' && `Bulk Release Restrictions (${selectedUserIds.length} Users)`}
+              {bulkActionType === 'restrict' && `Bulk Restrict Accounts (${selectedUserIds.length} Users)`}
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold">
+              {bulkActionType === 'freeze' && 'Freezing will block new deposits, withdrawals, and value-added transfers across all selected user accounts.'}
+              {bulkActionType === 'unfreeze' && 'Restoring will lift wallet restrictions and allow normal wallet transactions across all selected accounts.'}
+              {bulkActionType === 'release_restrictions' && 'Release restrictions will restore Active status and unblock wallets for all selected accounts.'}
+              {bulkActionType === 'restrict' && 'Restricting accounts will flag all selected accounts for compliance review and restrict service access.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            {/* Selected Users Summary Box */}
+            <div className="bg-muted/40 p-4 rounded-2xl border space-y-2 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b">
+                <span className="font-bold text-muted-foreground uppercase text-[10px]">Selected Target Accounts:</span>
+                <Badge className="bg-primary/20 text-primary border-primary/30 font-black text-[10px]">{selectedUserIds.length} Users</Badge>
+              </div>
+              <ScrollArea className="max-h-36 pr-2">
+                <div className="space-y-1.5">
+                  {selectedUserIds.map((uid) => {
+                    const u = platformUsers?.find((user: any) => user.id === uid);
+                    return (
+                      <div key={uid} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-background/60 border">
+                        <div className="truncate mr-2">
+                          <span className="font-black text-foreground">{u?.firstName} {u?.lastName}</span>
+                          <span className="text-muted-foreground text-[10px] font-mono ml-1.5">({u?.email})</span>
+                        </div>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase shrink-0">
+                          {u?.role || 'Customer'}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+
+            {/* Optional Reason Input */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black uppercase text-muted-foreground">
+                Audit Reason / Administrative Note (Optional)
+              </Label>
+              <Input
+                value={bulkActionReason}
+                onChange={(e) => setBulkActionReason(e.target.value)}
+                placeholder={
+                  bulkActionType === 'freeze' ? "e.g. Mass security freeze pending identity verification" :
+                  bulkActionType === 'unfreeze' ? "e.g. Identity clearance confirmed, lifting restrictions" :
+                  bulkActionType === 'release_restrictions' ? "e.g. Compliance audit passed, restoring accounts" :
+                  "e.g. Suspicious velocity or risk investigation"
+                }
+                className="h-11 rounded-xl border-2 font-medium text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsBulkActionDialogOpen(false)}
+              disabled={isProcessingBulkUserAction}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleOpenBulkConfirmation}
+              disabled={isProcessingBulkUserAction || selectedUserIds.length === 0}
+              className={cn(
+                "rounded-xl font-black text-xs uppercase text-white gap-2 shadow-sm",
+                bulkActionType === 'freeze' && "bg-amber-600 hover:bg-amber-700",
+                bulkActionType === 'unfreeze' && "bg-green-600 hover:bg-green-700",
+                bulkActionType === 'release_restrictions' && "bg-blue-600 hover:bg-blue-700",
+                bulkActionType === 'restrict' && "bg-red-600 hover:bg-red-700"
+              )}
+            >
+              {bulkActionType === 'freeze' ? <Lock className="h-4 w-4" /> :
+                bulkActionType === 'unfreeze' ? <Unlock className="h-4 w-4" /> :
+                bulkActionType === 'release_restrictions' ? <ShieldCheck className="h-4 w-4" /> :
+                <UserX className="h-4 w-4" />
+              }
+              {bulkActionType === 'freeze' && `Proceed to Freeze (${selectedUserIds.length})`}
+              {bulkActionType === 'unfreeze' && `Proceed to Unfreeze (${selectedUserIds.length})`}
+              {bulkActionType === 'release_restrictions' && `Proceed to Release (${selectedUserIds.length})`}
+              {bulkActionType === 'restrict' && `Proceed to Restrict (${selectedUserIds.length})`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MANDATORY CONFIRMATION DIALOG FOR BULK FREEZE & RELEASE OPERATIONS */}
+      <AlertDialog open={isBulkConfirmDialogOpen} onOpenChange={setIsBulkConfirmDialogOpen}>
+        <AlertDialogContent className="sm:max-w-lg rounded-[2.5rem] border-2 border-amber-500/40 shadow-2xl p-6 bg-background">
+          <AlertDialogHeader className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "p-3 rounded-2xl border shrink-0",
+                bulkActionType === 'freeze' && "bg-amber-500/10 text-amber-600 border-amber-500/30",
+                (bulkActionType === 'unfreeze' || bulkActionType === 'release_restrictions') && "bg-green-500/10 text-green-600 border-green-500/30",
+                bulkActionType === 'restrict' && "bg-red-500/10 text-red-600 border-red-500/30"
+              )}>
+                {bulkActionType === 'freeze' && <Lock className="h-6 w-6 text-amber-600" />}
+                {(bulkActionType === 'unfreeze' || bulkActionType === 'release_restrictions') && <Unlock className="h-6 w-6 text-green-600" />}
+                {bulkActionType === 'restrict' && <ShieldAlert className="h-6 w-6 text-red-600" />}
+              </div>
+              <div>
+                <AlertDialogTitle className="text-base font-black uppercase tracking-tight">
+                  Mandatory Confirmation Required
+                </AlertDialogTitle>
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Bulk {bulkActionType === 'freeze' ? 'Wallet Freeze' : bulkActionType === 'unfreeze' ? 'Wallet Unfreeze' : bulkActionType === 'release_restrictions' ? 'Release Restrictions' : 'Account Restriction'}
+                </p>
+              </div>
+            </div>
+
+            <AlertDialogDescription className="text-xs font-medium text-muted-foreground pt-1">
+              This mandatory safety confirmation prevents accidental changes to user wallet statuses. Please review the operational impact below and verify authorization.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            {/* Impact Warning Banner */}
+            <div className={cn(
+              "p-3.5 rounded-2xl border text-xs font-medium space-y-1.5",
+              bulkActionType === 'freeze' && "bg-amber-50/80 dark:bg-amber-950/40 border-amber-500/40 text-amber-950 dark:text-amber-200",
+              (bulkActionType === 'unfreeze' || bulkActionType === 'release_restrictions') && "bg-green-50/80 dark:bg-green-950/40 border-green-500/40 text-green-950 dark:text-green-200",
+              bulkActionType === 'restrict' && "bg-red-50/80 dark:bg-red-950/40 border-red-500/40 text-red-950 dark:text-red-200"
+            )}>
+              <div className="flex items-center gap-2 font-black uppercase text-[11px]">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>
+                  {bulkActionType === 'freeze' && `CRITICAL: Freezing ${selectedUserIds.length} User Wallets`}
+                  {(bulkActionType === 'unfreeze' || bulkActionType === 'release_restrictions') && `NOTICE: Releasing & Restoring ${selectedUserIds.length} User Wallets`}
+                  {bulkActionType === 'restrict' && `CRITICAL: Restricting ${selectedUserIds.length} User Accounts`}
+                </span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                {bulkActionType === 'freeze' && "This will immediately halt all incoming funding, outgoing balance transfers, and wallet withdrawals for every selected account. Affected users will see an active security freeze restriction."}
+                {(bulkActionType === 'unfreeze' || bulkActionType === 'release_restrictions') && "This will immediately lift wallet freeze locks, restore Active standing, and re-enable full deposit and transfer capabilities for every selected user account."}
+                {bulkActionType === 'restrict' && "This will restrict user access and flag selected accounts for administrative compliance review."}
+              </p>
+            </div>
+
+            {/* Target Accounts Summary */}
+            <div className="bg-muted/40 p-3 rounded-2xl border space-y-2">
+              <div className="flex justify-between items-center text-[10px] font-black uppercase text-muted-foreground">
+                <span>Selected Accounts ({selectedUserIds.length})</span>
+                {bulkActionReason && (
+                  <span className="truncate max-w-[200px]" title={bulkActionReason}>
+                    Note: {bulkActionReason}
+                  </span>
+                )}
+              </div>
+              <ScrollArea className="max-h-28 pr-2">
+                <div className="space-y-1">
+                  {selectedUserIds.map((uid) => {
+                    const u = platformUsers?.find((user: any) => user.id === uid);
+                    return (
+                      <div key={uid} className="flex items-center justify-between text-[11px] p-1.5 rounded-lg bg-background/80 border">
+                        <span className="font-bold truncate mr-2">
+                          {u?.firstName || ''} {u?.lastName || ''} <span className="text-muted-foreground font-mono text-[10px]">({u?.email || uid})</span>
+                        </span>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase shrink-0">
+                          {u?.role || 'User'}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+
+            {/* Mandatory Checkbox */}
+            <div className="flex items-start space-x-2.5 p-3 rounded-xl bg-background border">
+              <Checkbox
+                id="bulk-confirm-ack"
+                checked={bulkConfirmAcknowledged}
+                onCheckedChange={(checked) => setBulkConfirmAcknowledged(!!checked)}
+                className="mt-0.5"
+              />
+              <Label htmlFor="bulk-confirm-ack" className="text-xs font-semibold leading-snug cursor-pointer select-none">
+                I verify that I have reviewed the {selectedUserIds.length} target accounts and explicitly authorize this bulk wallet status change.
+              </Label>
+            </div>
+
+            {/* Keyword Confirmation Input */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black uppercase text-muted-foreground">
+                Type <span className="font-mono text-foreground font-black underline">{getBulkActionKeyword(bulkActionType)}</span> to confirm authorization:
+              </Label>
+              <Input
+                value={bulkConfirmPhrase}
+                onChange={(e) => setBulkConfirmPhrase(e.target.value)}
+                placeholder={`Type "${getBulkActionKeyword(bulkActionType)}" here`}
+                className="h-10 rounded-xl border-2 font-mono text-xs uppercase"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <AlertDialogCancel
+              disabled={isProcessingBulkUserAction}
+              onClick={() => {
+                setIsBulkConfirmDialogOpen(false);
+                setBulkConfirmPhrase("");
+                setBulkConfirmAcknowledged(false);
+              }}
+              className="rounded-xl font-black text-xs uppercase"
+            >
+              Abort / Cancel
+            </AlertDialogCancel>
+            <Button
+              onClick={handleExecuteBulkUserAction}
+              disabled={
+                isProcessingBulkUserAction ||
+                !bulkConfirmAcknowledged ||
+                bulkConfirmPhrase.trim().toUpperCase() !== getBulkActionKeyword(bulkActionType)
+              }
+              className={cn(
+                "rounded-xl font-black text-xs uppercase text-white gap-2 shadow-sm",
+                bulkActionType === 'freeze' && "bg-amber-600 hover:bg-amber-700",
+                (bulkActionType === 'unfreeze' || bulkActionType === 'release_restrictions') && "bg-green-600 hover:bg-green-700",
+                bulkActionType === 'restrict' && "bg-red-600 hover:bg-red-700"
+              )}
+            >
+              {isProcessingBulkUserAction ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : bulkActionType === 'freeze' ? (
+                <Lock className="h-4 w-4" />
+              ) : (bulkActionType === 'unfreeze' || bulkActionType === 'release_restrictions') ? (
+                <Unlock className="h-4 w-4" />
+              ) : (
+                <ShieldAlert className="h-4 w-4" />
+              )}
+              {`Authorize & Execute Bulk ${
+                bulkActionType === 'freeze' ? 'Freeze' : 
+                bulkActionType === 'unfreeze' ? 'Unfreeze' : 
+                bulkActionType === 'release_restrictions' ? 'Release' : 'Restrict'
+              } (${selectedUserIds.length})`}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

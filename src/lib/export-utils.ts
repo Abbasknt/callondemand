@@ -6,8 +6,12 @@
 
 /**
  * Generates and triggers a download for a CSV file.
+ * Supports both exportToCsv(filename, rows) and exportToCsv(rows, filename).
  */
-export function exportToCsv(filename: string, rows: any[]) {
+export function exportToCsv(arg1: string | any[], arg2: string | any[]) {
+  const filename = typeof arg1 === 'string' ? arg1 : (typeof arg2 === 'string' ? arg2 : 'export.csv');
+  const rows = Array.isArray(arg1) ? arg1 : (Array.isArray(arg2) ? arg2 : []);
+
   if (!rows || !rows.length) return;
 
   const separator = ',';

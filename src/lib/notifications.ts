@@ -1,16 +1,15 @@
-import { initializeApp, cert, getApps, App } from 'firebase-admin/app';
-import { getFirestore, Firestore } from 'firebase-admin/firestore';
-import { getMessaging, Messaging } from 'firebase-admin/messaging';
-import { Twilio } from 'twilio';
+import { initializeFirebase } from '@/firebase/init';
+import { collection, addDoc } from 'firebase/firestore';
 
 // Lazy-initialized instances
-let firebaseAdminApp: App | null = null;
-let db: Firestore | null = null;
-let messaging: Messaging | null = null;
-let twilioClient: Twilio | null = null;
+let firebaseAdminApp: any = null;
+let adminDb: any = null;
+let messaging: any = null;
+let twilioClient: any = null;
 
-function getFirebaseAdmin(): App {
+async function getFirebaseAdmin() {
     if (!firebaseAdminApp) {
+        const { getApps, initializeApp, cert } = await import('firebase-admin/app');
         const apps = getApps();
         if (apps.length) {
             firebaseAdminApp = apps[0];
@@ -39,30 +38,39 @@ function getFirebaseAdmin(): App {
             }
         }
     }
-    return firebaseAdminApp!;
+    return firebaseAdminApp;
 }
 
-function getDb(): Firestore {
-    if (!db) {
-        db = getFirestore(getFirebaseAdmin());
+async function getDb() {
+    if (!adminDb) {
+        const adminApp = await getFirebaseAdmin();
+        if (adminApp) {
+            const { getFirestore } = await import('firebase-admin/firestore');
+            adminDb = getFirestore(adminApp);
+        }
     }
-    return db;
+    return adminDb;
 }
 
-function getMessagingClient(): Messaging {
+async function getMessagingClient() {
     if (!messaging) {
-        messaging = getMessaging(getFirebaseAdmin());
+        const adminApp = await getFirebaseAdmin();
+        if (adminApp) {
+            const { getMessaging } = await import('firebase-admin/messaging');
+            messaging = getMessaging(adminApp);
+        }
     }
     return messaging;
 }
 
-function getTwilioClient(): Twilio {
+async function getTwilioClient() {
     if (!twilioClient) {
         const sid = process.env.TWILIO_ACCOUNT_SID;
         const token = process.env.TWILIO_AUTH_TOKEN;
         if (!sid || !token) {
             throw new Error('TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN is missing');
         }
+        const { Twilio } = await import('twilio');
         twilioClient = new Twilio(sid, token);
     }
     return twilioClient;
@@ -70,14 +78,28 @@ function getTwilioClient(): Twilio {
 
 export async function sendInAppNotification(userId: string, title: string, body: string, type: string) {
     try {
-        const firestoreDb = getDb();
-        await firestoreDb.collection('users').doc(userId).collection('notifications').add({
-            title,
-            body,
-            type,
-            read: false,
-            createdAt: new Date()
-        });
+        const firestoreDb = await getDb();
+        if (firestoreDb) {
+            await firestoreDb.collection('users').doc(userId).collection('notifications').add({
+                title,
+                body,
+                type,
+                read: false,
+                createdAt: new Date()
+            });
+            return;
+        }
+        // Fallback to applet client firestore
+        const { firestore } = initializeFirebase();
+        if (firestore) {
+            await addDoc(collection(firestore, 'users', userId, 'notifications'), {
+                title,
+                body,
+                type,
+                read: false,
+                createdAt: new Date().toISOString()
+            });
+        }
     } catch (error) {
         console.error('Error sending in-app notification:', error);
     }
@@ -85,11 +107,13 @@ export async function sendInAppNotification(userId: string, title: string, body:
 
 export async function sendPushNotification(fcmToken: string, title: string, body: string) {
     try {
-        const messagingClient = getMessagingClient();
-        await messagingClient.send({
-            token: fcmToken,
-            notification: { title, body }
-        });
+        const messagingClient = await getMessagingClient();
+        if (messagingClient) {
+            await messagingClient.send({
+                token: fcmToken,
+                notification: { title, body }
+            });
+        }
     } catch (error) {
         console.error('Error sending push notification:', error);
     }
@@ -97,12 +121,14 @@ export async function sendPushNotification(fcmToken: string, title: string, body
 
 export async function sendSMS(to: string, body: string) {
     try {
-        const client = getTwilioClient();
-        await client.messages.create({
-            body,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to
-        });
+        const client = await getTwilioClient();
+        if (client && process.env.TWILIO_PHONE_NUMBER) {
+            await client.messages.create({
+                body,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to
+            });
+        }
     } catch (error) {
         console.error('Error sending SMS:', error);
     }

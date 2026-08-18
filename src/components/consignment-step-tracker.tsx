@@ -192,7 +192,7 @@ export function ConsignmentStepTracker({
     
     // Reverse search to find the latest log for matching statuses
     const foundLog = [...statusHistory].reverse().find(entry => 
-      step.matchingStatuses.some(s => entry.status?.toLowerCase().includes(s.toLowerCase()))
+      Array.isArray(step?.matchingStatuses) && step.matchingStatuses.some(s => entry?.status?.toLowerCase().includes(s.toLowerCase()))
     )
 
     if (foundLog?.timestamp) {
@@ -352,7 +352,7 @@ export function ConsignmentStepTracker({
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-0.5">
             {STATUS_LEGEND.map((item) => {
-              const isActive = item.matchingStatuses.some(s => 
+              const isActive = Array.isArray(item?.matchingStatuses) && item.matchingStatuses.some(s => 
                 (status || "").toLowerCase().includes(s.toLowerCase())
               )
 

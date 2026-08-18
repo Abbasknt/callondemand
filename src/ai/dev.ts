@@ -1,6 +1,4 @@
-import { config } from 'dotenv';
-config();
-
+// AI Flow Registry
 import '@/ai/flows/admin-content-generator-flow.ts';
 import '@/ai/flows/customer-feedback-summarizer-flow.ts';
 import '@/ai/flows/lifestyle-recommender-flow.ts';

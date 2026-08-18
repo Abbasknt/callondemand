@@ -196,6 +196,10 @@ export default function RegisterPage() {
         }
       }
 
+      if (!firestore) {
+        throw new Error("Database service is initializing. Please try again in a moment.");
+      }
+
       const isMasterEmail = email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
       
       // Check for Admin Invitations

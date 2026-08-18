@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "node node_modules/next/dist/bin/next dev -p 3000",
+    "build": "NODE_ENV=production node node_modules/next/dist/bin/next build && node scripts/sync-dist.js",
+    "start": "node server.ts",
+    "lint": "node node_modules/next/dist/bin/next lint"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.40.1",
@@ -35,7 +35,7 @@
     "axios": "^1.7.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
+    "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.5.1",
     "firebase": "^11.3.1",
     "firebase-admin": "^12.0.0",
@@ -47,6 +47,8 @@
     "react-day-picker": "^8.10.1",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.0",
+    "react-remove-scroll": "^2.7.2",
+    "react-remove-scroll-bar": "^2.3.8",
     "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
@@ -58,7 +60,7 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "eslint": "^8.57.1",
-    "eslint-config-next": "^15.1.0",
+    "eslint-config-next": "15.1.7",
     "postcss": "^8.5.2",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.3"

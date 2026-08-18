@@ -169,6 +169,12 @@ export default function WalletPage() {
   }, [firestore, user]);
   const { data: profile } = useDoc(profileRef);
 
+  const govRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'settings', 'wallet_governance');
+  }, [firestore]);
+  const { data: gov } = useDoc(govRef);
+
   const walletRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'users', user.uid, 'wallet', 'default');
@@ -192,8 +198,31 @@ export default function WalletPage() {
     ?.reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0) || 0;
 
   const handleDeposit = async () => {
-    if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) < 100) {
-      toast({ title: "Min ₦100 required", variant: "destructive" });
+    if (profile?.isWalletFrozen) {
+      toast({ title: "Wallet Restricted", description: "Your wallet is currently frozen for security review.", variant: "destructive" });
+      return;
+    }
+
+    if (gov?.emergencyWalletLockdown) {
+      toast({ title: "System Lockdown", description: "Wallet transactions are temporarily suspended.", variant: "destructive" });
+      return;
+    }
+
+    if (gov?.blockNewDeposits) {
+      toast({ title: "Deposits Paused", description: "New funding deposits are temporarily blocked by administration.", variant: "destructive" });
+      return;
+    }
+
+    const minAmount = gov?.minFundingAmount || 100;
+    const maxLimit = gov?.maxTransactionLimit || 2000000;
+
+    if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) < minAmount) {
+      toast({ title: `Min ₦${minAmount.toLocaleString()} required`, variant: "destructive" });
+      return;
+    }
+
+    if (Number(depositAmount) > maxLimit) {
+      toast({ title: "Limit Exceeded", description: `Maximum single deposit allowed is ₦${maxLimit.toLocaleString()}`, variant: "destructive" });
       return;
     }
     
@@ -237,6 +266,21 @@ export default function WalletPage() {
   const [isVerifyingWithdrawal, setIsVerifyingWithdrawal] = useState(false)
 
   const handleWithdrawInitiate = async () => {
+    if (profile?.isWalletFrozen) {
+      toast({ title: "Wallet Restricted", description: "Your wallet is currently frozen for security review.", variant: "destructive" });
+      return;
+    }
+
+    if (gov?.emergencyWalletLockdown) {
+      toast({ title: "System Lockdown", description: "Wallet withdrawals are temporarily suspended.", variant: "destructive" });
+      return;
+    }
+
+    if (gov?.blockWithdrawals) {
+      toast({ title: "Withdrawals Suspended", description: "Outward disbursements are temporarily paused.", variant: "destructive" });
+      return;
+    }
+
     const amount = Number(withdrawAmount);
     if (!withdrawAmount || isNaN(amount) || amount < 100) {
       toast({ title: "Min ₦100 required for withdrawal", variant: "destructive" });
@@ -448,16 +492,65 @@ export default function WalletPage() {
             </CardContent>
           </Card>
 
-          {/* Security & Admin Approval Notification Banner */}
-          <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-4 flex items-start gap-3 text-amber-900 shadow-sm">
-            <Shield className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="space-y-0.5 text-left">
-              <p className="text-[11px] font-black uppercase tracking-wider text-amber-950">Institutional Funding Security Active</p>
-              <p className="text-[10px] font-medium leading-relaxed text-amber-800">
-                To guarantee account protection, auto-crediting is disabled. All Monnify funding deposits are reviewed and authorized by an Administrator before your wallet balance is credited.
-              </p>
+          {/* Account Frozen / Restrictions Alert */}
+          {profile?.isWalletFrozen && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 flex items-start gap-3 text-red-950 shadow-sm">
+              <ShieldAlert className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5 text-left">
+                <p className="text-[11px] font-black uppercase tracking-wider text-red-700">Wallet Operations Restricted</p>
+                <p className="text-[10px] font-semibold leading-relaxed text-red-900">
+                  {profile?.walletFreezeReason 
+                    ? `Reason: ${profile.walletFreezeReason}` 
+                    : 'Your wallet has been placed under temporary security restriction. Inward deposits and outward disbursements are paused.'}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Emergency System Lockdown Banner */}
+          {gov?.emergencyWalletLockdown && (
+            <div className="bg-red-600 text-white rounded-2xl p-4 flex items-start gap-3 shadow-md">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5 animate-pulse" />
+              <div className="space-y-0.5 text-left">
+                <p className="text-[11px] font-black uppercase tracking-wider">System-Wide Wallet Maintenance Lockdown</p>
+                <p className="text-[10px] font-medium leading-relaxed opacity-95">
+                  Wallet transactions are temporarily suspended across the system for security clearance.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Dynamic Governance Info Banner */}
+          {!profile?.isWalletFrozen && !gov?.emergencyWalletLockdown && (
+            <div className={cn(
+              "border rounded-2xl p-4 flex items-start gap-3 shadow-sm",
+              gov?.approvalMode === 'MANUAL_ALL' ? "bg-amber-50/90 border-amber-200/80 text-amber-900" :
+              gov?.approvalMode === 'INSTANT_AUTO' ? "bg-green-50/90 border-green-200/80 text-green-900" :
+              "bg-blue-50/90 border-blue-200/80 text-blue-900"
+            )}>
+              <Shield className={cn(
+                "h-5 w-5 shrink-0 mt-0.5",
+                gov?.approvalMode === 'MANUAL_ALL' ? "text-amber-600" :
+                gov?.approvalMode === 'INSTANT_AUTO' ? "text-green-600" : "text-blue-600"
+              )} />
+              <div className="space-y-0.5 text-left">
+                <p className="text-[11px] font-black uppercase tracking-wider">
+                  {gov?.approvalMode === 'MANUAL_ALL' ? "Institutional Funding Security Active" :
+                   gov?.approvalMode === 'INSTANT_AUTO' ? "Instant Gateway Settlement Active" :
+                   "Flexible Funding Security Active"}
+                </p>
+                <p className="text-[10px] font-medium leading-relaxed opacity-90">
+                  {gov?.approvalMode === 'MANUAL_ALL' ? (
+                    "Incoming Monnify funding deposits are reviewed and authorized by an Administrator before wallet balance is credited."
+                  ) : gov?.approvalMode === 'INSTANT_AUTO' ? (
+                    `All verified Monnify deposits are credited directly to your balance up to ₦${Number(gov?.maxTransactionLimit || 2000000).toLocaleString()}.`
+                  ) : (
+                    `Deposits ≤ ₦${Number(gov?.approvalThreshold || 100000).toLocaleString()} are credited automatically upon gateway clearance. Deposits above threshold undergo fast compliance review.`
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
 
           <Card className="border-none shadow-lg rounded-[2.5rem] bg-card overflow-hidden">
             <CardHeader className="bg-muted/5 p-6 border-b">

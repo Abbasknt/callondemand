@@ -3,38 +3,325 @@
 import { getAdminDb } from '@/firebase/server';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, increment, addDoc } from 'firebase/firestore';
 import { verifyTransaction } from './monnify';
+import { 
+  type FundingRequestItem, 
+  type WalletGovernanceSettings, 
+  DEFAULT_WALLET_GOVERNANCE 
+} from '@/lib/wallet-governance-types';
 
-export interface FundingRequestItem {
-  id: string;
-  userId: string;
-  userEmail: string;
-  userName?: string;
-  amount: number;
-  reference: string;
-  gatewayId?: string;
-  paymentMethod?: string;
-  status: 'Pending Approval' | 'Approved' | 'Rejected';
-  gatewayStatus?: string;
-  gatewayVerified?: boolean;
-  contractCode?: string;
-  merchantAccount?: string;
-  amountPaid?: number;
-  settlementAmount?: number;
-  paidOn?: string;
-  createdAt: string;
-  approvedBy?: string;
-  approvedAt?: string;
-  rejectedBy?: string;
-  rejectionReason?: string;
-  gatewayMatched?: boolean;
-  monnifyAuditData?: any;
-}
+export type { FundingRequestItem, WalletGovernanceSettings };
 
 const MASTER_ADMIN_EMAILS = [
   'altamambcs@callondemandbiz.com',
   'tatatradeandinnovation@gmail.com',
   'altamam02@gmail.com'
 ];
+
+/**
+ * Retrieves the current live Wallet Governance Settings from Firestore,
+ * falling back gracefully to DEFAULT_WALLET_GOVERNANCE if unset.
+ */
+export async function getWalletGovernanceSettings(): Promise<WalletGovernanceSettings> {
+  try {
+    const db = getAdminDb();
+    if (!db) return DEFAULT_WALLET_GOVERNANCE;
+
+    const govRef = doc(db, 'application_settings', 'wallet_governance');
+    const snap = await getDoc(govRef);
+
+    if (snap.exists()) {
+      return {
+        ...DEFAULT_WALLET_GOVERNANCE,
+        ...snap.data()
+      } as WalletGovernanceSettings;
+    }
+    return DEFAULT_WALLET_GOVERNANCE;
+  } catch (err) {
+    console.error('Error fetching wallet governance settings:', err);
+    return DEFAULT_WALLET_GOVERNANCE;
+  }
+}
+
+/**
+ * Admin Action: Updates the global Wallet Governance Settings with audit logging.
+ */
+export async function updateWalletGovernanceSettings(params: {
+  settings: Partial<WalletGovernanceSettings>;
+  adminEmail: string;
+  adminUid: string;
+}): Promise<{ success: boolean; error?: string; settings?: WalletGovernanceSettings }> {
+  try {
+    const db = getAdminDb();
+    if (!db) return { success: false, error: 'Database unavailable' };
+
+    const { settings, adminEmail, adminUid } = params;
+    if (!adminEmail) return { success: false, error: 'Admin authorization required' };
+
+    const current = await getWalletGovernanceSettings();
+    const updatedSettings: WalletGovernanceSettings = {
+      ...current,
+      ...settings,
+      lastUpdatedBy: adminEmail,
+      lastUpdatedAt: new Date().toISOString()
+    };
+
+    const govRef = doc(db, 'application_settings', 'wallet_governance');
+    await setDoc(govRef, updatedSettings, { merge: true });
+
+    // Log to system audit trail
+    try {
+      const logsRef = collection(db, 'system_logs');
+      await addDoc(logsRef, {
+        action: 'WALLET_GOVERNANCE_UPDATED',
+        performerId: adminUid || 'admin',
+        performerEmail: adminEmail,
+        timestamp: new Date(),
+        details: {
+          previousApprovalMode: current.approvalMode,
+          newApprovalMode: updatedSettings.approvalMode,
+          previousThreshold: current.approvalThreshold,
+          newThreshold: updatedSettings.approvalThreshold,
+          maxTransactionLimit: updatedSettings.maxTransactionLimit,
+          emergencyWalletLockdown: updatedSettings.emergencyWalletLockdown,
+          blockNewDeposits: updatedSettings.blockNewDeposits,
+          blockWithdrawals: updatedSettings.blockWithdrawals,
+          blockVASPayments: updatedSettings.blockVASPayments,
+          autoBlockSuspicious: updatedSettings.autoBlockSuspicious
+        }
+      });
+    } catch (logErr) {
+      console.warn('Audit log write error:', logErr);
+    }
+
+    return { success: true, settings: updatedSettings };
+  } catch (err: any) {
+    console.error('Error updating wallet governance settings:', err);
+    return { success: false, error: err?.message || 'Failed to update governance settings' };
+  }
+}
+
+/**
+ * Admin Action: Blocks a suspicious or fraudulent transaction from clearing.
+ */
+export async function blockFundingRequest(params: {
+  requestId: string;
+  adminEmail: string;
+  adminUid: string;
+  blockReason: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = getAdminDb();
+    if (!db) return { success: false, error: 'Database unavailable' };
+
+    const { requestId, adminEmail, adminUid, blockReason } = params;
+    if (!adminEmail) return { success: false, error: 'Admin authorization required' };
+
+    const fundingDocRef = doc(db, 'fundingRequests', requestId);
+    const fundingSnap = await getDoc(fundingDocRef);
+
+    if (!fundingSnap.exists()) {
+      return { success: false, error: 'Funding request not found' };
+    }
+
+    const funding = fundingSnap.data() as FundingRequestItem;
+    if (funding.status === 'Approved') {
+      return { success: false, error: 'Cannot block an already approved & credited transaction.' };
+    }
+
+    const blockedAt = new Date().toISOString();
+
+    // 1. Update Funding Request
+    await updateDoc(fundingDocRef, {
+      status: 'Blocked',
+      blockedBy: adminEmail,
+      blockedAt,
+      blockReason: blockReason || 'Transaction blocked by Admin Security Protocol'
+    });
+
+    // 2. Update User's Wallet Transaction
+    if (funding.userId) {
+      const txColRef = collection(db, 'users', funding.userId, 'wallet', 'default', 'transactions');
+      const txQuery = query(txColRef, where('reference', '==', funding.reference));
+      const txSnap = await getDocs(txQuery);
+
+      for (const txDoc of txSnap.docs) {
+        await updateDoc(doc(txColRef, txDoc.id), {
+          status: 'Blocked',
+          blockedBy: adminEmail,
+          blockedAt,
+          blockReason: blockReason || 'Transaction blocked by Admin Security Protocol'
+        });
+      }
+    }
+
+    // 3. Log Audit
+    try {
+      const logsRef = collection(db, 'system_logs');
+      await addDoc(logsRef, {
+        action: 'WALLET_FUNDING_BLOCKED',
+        performerId: adminUid || 'admin',
+        performerEmail: adminEmail,
+        timestamp: new Date(),
+        details: {
+          requestId,
+          userId: funding.userId,
+          userEmail: funding.userEmail,
+          amount: funding.amount,
+          reference: funding.reference,
+          blockReason
+        }
+      });
+    } catch (logErr) {
+      console.warn('Audit log write error:', logErr);
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error blocking funding request:', error);
+    return { success: false, error: error?.message || 'Block operation failed' };
+  }
+}
+
+/**
+ * Admin Action: Flags a transaction for enhanced compliance/fraud review.
+ */
+export async function flagFundingRequest(params: {
+  requestId: string;
+  adminEmail: string;
+  adminUid: string;
+  flagReason: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = getAdminDb();
+    if (!db) return { success: false, error: 'Database unavailable' };
+
+    const { requestId, adminEmail, adminUid, flagReason } = params;
+    if (!adminEmail) return { success: false, error: 'Admin authorization required' };
+
+    const fundingDocRef = doc(db, 'fundingRequests', requestId);
+    const fundingSnap = await getDoc(fundingDocRef);
+
+    if (!fundingSnap.exists()) {
+      return { success: false, error: 'Funding request not found' };
+    }
+
+    const funding = fundingSnap.data() as FundingRequestItem;
+    const flaggedAt = new Date().toISOString();
+
+    // 1. Update Funding Request
+    await updateDoc(fundingDocRef, {
+      status: 'Flagged',
+      flaggedBy: adminEmail,
+      flaggedAt,
+      flagReason: flagReason || 'Flagged for compliance investigation'
+    });
+
+    // 2. Update User's Wallet Transaction
+    if (funding.userId) {
+      const txColRef = collection(db, 'users', funding.userId, 'wallet', 'default', 'transactions');
+      const txQuery = query(txColRef, where('reference', '==', funding.reference));
+      const txSnap = await getDocs(txQuery);
+
+      for (const txDoc of txSnap.docs) {
+        await updateDoc(doc(txColRef, txDoc.id), {
+          status: 'Flagged',
+          flaggedBy: adminEmail,
+          flaggedAt,
+          flagReason: flagReason || 'Flagged for compliance review'
+        });
+      }
+    }
+
+    // 3. Log Audit
+    try {
+      const logsRef = collection(db, 'system_logs');
+      await addDoc(logsRef, {
+        action: 'WALLET_FUNDING_FLAGGED',
+        performerId: adminUid || 'admin',
+        performerEmail: adminEmail,
+        timestamp: new Date(),
+        details: {
+          requestId,
+          userId: funding.userId,
+          userEmail: funding.userEmail,
+          amount: funding.amount,
+          reference: funding.reference,
+          flagReason
+        }
+      });
+    } catch (logErr) {
+      console.warn('Audit log write error:', logErr);
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error flagging funding request:', error);
+    return { success: false, error: error?.message || 'Flag operation failed' };
+  }
+}
+
+/**
+ * Admin Action: Freeze or unfreeze a specific user's wallet to prevent any outgoing/incoming actions.
+ */
+export async function toggleUserWalletFreeze(params: {
+  userId: string;
+  userEmail: string;
+  isFrozen: boolean;
+  freezeReason?: string;
+  adminEmail: string;
+  adminUid: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = getAdminDb();
+    if (!db) return { success: false, error: 'Database unavailable' };
+
+    const { userId, userEmail, isFrozen, freezeReason, adminEmail, adminUid } = params;
+    if (!userId || !adminEmail) return { success: false, error: 'User ID and Admin credentials required' };
+
+    const timestamp = new Date().toISOString();
+
+    // 1. Update wallet default document
+    const walletDocRef = doc(db, 'users', userId, 'wallet', 'default');
+    await setDoc(walletDocRef, {
+      isWalletFrozen: isFrozen,
+      freezeReason: isFrozen ? (freezeReason || 'Administrative security freeze') : null,
+      freezeUpdatedBy: adminEmail,
+      freezeUpdatedAt: timestamp
+    }, { merge: true });
+
+    // 2. Update root user profile
+    const userDocRef = doc(db, 'users', userId);
+    await setDoc(userDocRef, {
+      isWalletFrozen: isFrozen,
+      walletFreezeReason: isFrozen ? (freezeReason || 'Administrative security freeze') : null,
+      walletFreezeUpdatedAt: timestamp
+    }, { merge: true });
+
+    // 3. Log Audit
+    try {
+      const logsRef = collection(db, 'system_logs');
+      await addDoc(logsRef, {
+        action: isFrozen ? 'USER_WALLET_FROZEN' : 'USER_WALLET_UNFROZEN',
+        performerId: adminUid || 'admin',
+        performerEmail: adminEmail,
+        timestamp: new Date(),
+        details: {
+          targetUserId: userId,
+          targetUserEmail: userEmail,
+          isFrozen,
+          freezeReason
+        }
+      });
+    } catch (logErr) {
+      console.warn('Audit log write error:', logErr);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error toggling wallet freeze:', err);
+    return { success: false, error: err?.message || 'Wallet freeze toggle failed' };
+  }
+}
 
 /**
  * Audits and cross-references a funding request with Monnify gateway live account.
@@ -130,7 +417,8 @@ export async function verifyMonnifyGatewayMatch(params: {
 }
 
 /**
- * Submits a Monnify funding payment for Admin Review without auto-crediting.
+ * Submits a Monnify funding payment for verification and processing under live Wallet Governance Rules.
+ * Respects Flexible Threshold, Instant Auto, and Manual Approval governance modes.
  */
 export async function submitFundingRequest(params: {
   userId: string;
@@ -147,7 +435,14 @@ export async function submitFundingRequest(params: {
   merchantAccount?: string;
   amountPaid?: number;
   settlementAmount?: number;
-}): Promise<{ success: boolean; error?: string; requestId?: string }> {
+}): Promise<{ 
+  success: boolean; 
+  error?: string; 
+  requestId?: string; 
+  status?: 'Approved' | 'Pending Approval' | 'Blocked' | 'Flagged';
+  autoApproved?: boolean;
+  approvalModeApplied?: string;
+}> {
   try {
     const db = getAdminDb();
     if (!db) {
@@ -163,16 +458,58 @@ export async function submitFundingRequest(params: {
       gatewayId, 
       paymentMethod, 
       paidOn, 
-      gatewayVerified, 
-      gatewayStatus,
+      gatewayVerified = true, 
+      gatewayStatus = 'PAID',
       contractCode,
       merchantAccount,
       amountPaid,
       settlementAmount
     } = params;
 
-    if (!userId || !reference || !amount || amount <= 0) {
+    const numAmount = Number(amount);
+    if (!userId || !reference || isNaN(numAmount) || numAmount <= 0) {
       return { success: false, error: 'Missing mandatory funding parameters' };
+    }
+
+    // 1. Fetch current live Governance Settings
+    const governance = await getWalletGovernanceSettings();
+
+    // 2. Emergency lockdown check
+    if (governance.emergencyWalletLockdown) {
+      return { 
+        success: false, 
+        error: 'Wallet operations are temporarily suspended due to emergency system maintenance.' 
+      };
+    }
+
+    // 3. New deposits blocked check
+    if (governance.blockNewDeposits) {
+      return { 
+        success: false, 
+        error: 'New wallet deposits are currently blocked by system administration.' 
+      };
+    }
+
+    // 4. Check if User Wallet is Frozen
+    const userDocRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userDocRef);
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      if (userData.isWalletFrozen) {
+        return { 
+          success: false, 
+          error: `Your wallet is currently frozen by administration (${userData.walletFreezeReason || 'Security restrictions'}). Please contact support.` 
+        };
+      }
+    }
+
+    // 5. Min funding amount verification
+    const minAmount = governance.minFundingAmount || 100;
+    if (numAmount < minAmount) {
+      return { 
+        success: false, 
+        error: `Minimum allowable deposit is ₦${minAmount.toLocaleString()}.` 
+      };
     }
 
     const requestId = reference.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -182,55 +519,165 @@ export async function submitFundingRequest(params: {
     if (existingSnap.exists()) {
       const existingData = existingSnap.data();
       if (existingData.status === 'Approved') {
-        return { success: true, requestId, error: 'Transaction has already been approved and credited.' };
+        return { 
+          success: true, 
+          requestId, 
+          status: 'Approved',
+          autoApproved: true,
+          error: 'Transaction has already been approved and credited.' 
+        };
       }
     }
 
+    // 6. Determine Governance Approval Routing
+    let finalStatus: 'Approved' | 'Pending Approval' | 'Blocked' | 'Flagged' = 'Pending Approval';
+    let approvalModeApplied: string = governance.approvalMode;
+    let exceededThreshold = false;
+    let blockReason: string | undefined = undefined;
+    let autoApproved = false;
+
+    const maxLimit = governance.maxTransactionLimit || 2000000;
+    const threshold = governance.approvalThreshold || 100000;
+    const isPaymentPaid = gatewayStatus === 'PAID' || gatewayStatus === 'SUCCESS' || gatewayStatus === 'OVERPAID';
+
+    // Check suspicious / unverified
+    if (!isPaymentPaid && governance.autoBlockSuspicious) {
+      finalStatus = 'Blocked';
+      blockReason = `Auto-blocked: Gateway payment status is '${gatewayStatus}' instead of PAID.`;
+    } else if (numAmount > maxLimit) {
+      // Exceeded max single transaction limit -> must hold for review
+      finalStatus = 'Pending Approval';
+      exceededThreshold = true;
+      approvalModeApplied = `${governance.approvalMode}_EXCEEDED_MAX_LIMIT`;
+    } else {
+      switch (governance.approvalMode) {
+        case 'INSTANT_AUTO':
+          if (gatewayVerified && isPaymentPaid) {
+            finalStatus = 'Approved';
+            autoApproved = true;
+            approvalModeApplied = 'INSTANT_AUTO';
+          } else {
+            finalStatus = 'Pending Approval';
+          }
+          break;
+
+        case 'FLEXIBLE_THRESHOLD':
+          if (numAmount <= threshold && gatewayVerified && isPaymentPaid) {
+            finalStatus = 'Approved';
+            autoApproved = true;
+            approvalModeApplied = 'FLEXIBLE_THRESHOLD_AUTO';
+            exceededThreshold = false;
+          } else {
+            finalStatus = 'Pending Approval';
+            exceededThreshold = numAmount > threshold;
+            approvalModeApplied = 'FLEXIBLE_THRESHOLD_MANUAL';
+          }
+          break;
+
+        case 'MANUAL_ALL':
+        default:
+          finalStatus = 'Pending Approval';
+          approvalModeApplied = 'MANUAL_ALL';
+          exceededThreshold = false;
+          break;
+      }
+    }
+
+    const timestamp = new Date().toISOString();
     const fundingPayload: FundingRequestItem = {
       id: requestId,
       userId,
       userEmail: userEmail || 'customer@call-on-demand.com',
       userName: userName || 'COD Member',
-      amount: Number(amount),
+      amount: numAmount,
       reference,
       gatewayId: gatewayId || reference,
       paymentMethod: paymentMethod || 'Monnify Gateway',
-      status: 'Pending Approval',
-      gatewayStatus: gatewayStatus || 'PAID',
-      gatewayVerified: gatewayVerified !== undefined ? gatewayVerified : true,
+      status: finalStatus,
+      gatewayStatus,
+      gatewayVerified,
       contractCode: contractCode || '730430763017',
       merchantAccount: merchantAccount || '8065933172',
-      amountPaid: amountPaid ? Number(amountPaid) : Number(amount),
-      settlementAmount: settlementAmount ? Number(settlementAmount) : Number(amount),
-      paidOn: paidOn || new Date().toISOString(),
-      createdAt: new Date().toISOString(),
+      amountPaid: amountPaid ? Number(amountPaid) : numAmount,
+      settlementAmount: settlementAmount ? Number(settlementAmount) : numAmount,
+      paidOn: paidOn || timestamp,
+      createdAt: timestamp,
+      approvalModeApplied,
+      exceededThreshold,
+      gatewayMatched: isPaymentPaid,
+      ...(finalStatus === 'Approved' ? {
+        approvedBy: 'SYSTEM_GOVERNANCE_AUTO_RULE',
+        approvedAt: timestamp,
+        adminNote: `Auto-credited via ${approvalModeApplied}`
+      } : {}),
+      ...(finalStatus === 'Blocked' ? {
+        blockedBy: 'SYSTEM_AUTO_BLOCK_GOVERNANCE',
+        blockedAt: timestamp,
+        blockReason
+      } : {})
     };
 
     await setDoc(fundingDocRef, fundingPayload, { merge: true });
 
-    // Also record or update in the user's personal transaction subcollection as Pending Approval
+    // 7. If Auto-Approved, credit wallet immediately
+    if (finalStatus === 'Approved') {
+      const walletDocRef = doc(db, 'users', userId, 'wallet', 'default');
+      await setDoc(walletDocRef, {
+        balance: increment(numAmount),
+        lastDepositAt: timestamp,
+        lastAutoDepositAt: timestamp
+      }, { merge: true });
+    }
+
+    // 8. Record in user transaction subcollection
     const txColRef = collection(db, 'users', userId, 'wallet', 'default', 'transactions');
     const txQuery = query(txColRef, where('reference', '==', reference));
     const txSnap = await getDocs(txQuery);
+
+    const userTxStatus = finalStatus === 'Approved' ? 'Completed' : finalStatus;
+    const userTxDesc = finalStatus === 'Approved'
+      ? `Wallet Funding: ${paymentMethod || 'Monnify'} (Auto-Approved)`
+      : finalStatus === 'Blocked'
+      ? `Wallet Funding: ${paymentMethod || 'Monnify'} (Blocked by Governance)`
+      : `Wallet Funding: ${paymentMethod || 'Monnify'} (Awaiting Admin Clearance${exceededThreshold ? ` - Exceeded ₦${threshold.toLocaleString()} Threshold` : ''})`;
 
     if (txSnap.empty) {
       const newTxRef = doc(txColRef);
       await setDoc(newTxRef, {
         type: 'Deposit',
-        amount: Number(amount),
-        description: `Wallet Funding: ${paymentMethod || 'Monnify'} (Awaiting Admin Approval)`,
-        transactionDate: paidOn || new Date().toISOString(),
-        status: 'Pending Approval',
+        amount: numAmount,
+        description: userTxDesc,
+        transactionDate: paidOn || timestamp,
+        status: userTxStatus,
         reference,
         gatewayId: gatewayId || reference,
         paymentMethod: paymentMethod || 'Monnify',
         contractCode: contractCode || '730430763017',
-        gatewayVerified: true,
-        submittedAt: new Date().toISOString()
+        gatewayVerified,
+        submittedAt: timestamp,
+        approvalModeApplied,
+        exceededThreshold,
+        ...(finalStatus === 'Blocked' ? { blockReason } : {})
       });
+    } else {
+      for (const txDoc of txSnap.docs) {
+        await updateDoc(doc(txColRef, txDoc.id), {
+          status: userTxStatus,
+          description: userTxDesc,
+          approvalModeApplied,
+          exceededThreshold,
+          ...(finalStatus === 'Blocked' ? { blockReason } : {})
+        });
+      }
     }
 
-    return { success: true, requestId };
+    return { 
+      success: true, 
+      requestId, 
+      status: finalStatus, 
+      autoApproved,
+      approvalModeApplied
+    };
   } catch (error: any) {
     console.error('Error submitting funding request:', error);
     return { success: false, error: error?.message || 'Failed to submit funding request' };

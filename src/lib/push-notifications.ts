@@ -161,7 +161,7 @@ export async function showLocalPushNotification(options: PushNotificationOptions
           badge: '/favicon.ico',
           data: { url: options.url || '/dashboard' },
           vibrate: [100, 50, 100],
-        });
+        } as any);
         return true;
       }
     }

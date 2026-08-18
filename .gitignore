@@ -1,8 +1,5 @@
-# Next.js
-.next/
-out/
-build/
-dist/
+# Next.js build cache only
+.next/cache/
 
 # Node
 node_modules/
