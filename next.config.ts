@@ -45,11 +45,6 @@ const nextConfig: NextConfig = {
     ],
   },
   serverExternalPackages: [
-    "genkit",
-    "@genkit-ai/google-genai",
-    "@genkit-ai/core",
-    "@genkit-ai/ai",
-    "@genkit-ai/flow",
     "firebase-admin",
     "@grpc/grpc-js",
     "@grpc/proto-loader",

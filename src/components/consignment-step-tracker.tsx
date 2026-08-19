@@ -188,17 +188,18 @@ export function ConsignmentStepTracker({
 
   // Find latest log entry for each step if available
   const getStepTimestamp = (step: StepDefinition): string | null => {
-    if (!statusHistory || statusHistory.length === 0) return null
+    if (!statusHistory || !Array.isArray(statusHistory) || statusHistory.length === 0) return null
     
     // Reverse search to find the latest log for matching statuses
+    const matchingStatuses = Array.isArray(step?.matchingStatuses) ? step.matchingStatuses : []
     const foundLog = [...statusHistory].reverse().find(entry => 
-      Array.isArray(step?.matchingStatuses) && step.matchingStatuses.some(s => entry?.status?.toLowerCase().includes(s.toLowerCase()))
+      matchingStatuses.some(s => typeof s === 'string' && typeof entry?.status === 'string' && entry.status.toLowerCase().includes(s.toLowerCase()))
     )
 
     if (foundLog?.timestamp) {
       try {
         const date = new Date(foundLog.timestamp)
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        return isNaN(date.getTime()) ? null : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       } catch {
         return null
       }
@@ -352,8 +353,10 @@ export function ConsignmentStepTracker({
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-0.5">
             {STATUS_LEGEND.map((item) => {
-              const isActive = Array.isArray(item?.matchingStatuses) && item.matchingStatuses.some(s => 
-                (status || "").toLowerCase().includes(s.toLowerCase())
+              const matchingStatuses = Array.isArray(item?.matchingStatuses) ? item.matchingStatuses : []
+              const currentStatus = typeof status === "string" ? status.toLowerCase() : ""
+              const isActive = matchingStatuses.some(s => 
+                typeof s === "string" && currentStatus.includes(s.toLowerCase())
               )
 
               return (

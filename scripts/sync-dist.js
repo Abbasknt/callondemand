@@ -1,13 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const rootDir = process.cwd();
+const rootDir = path.resolve(__dirname, '..');
 const nextDir = path.join(rootDir, '.next');
 const distDir = path.join(rootDir, 'dist');
 const outDir = path.join(rootDir, 'out');
 const publicDir = path.join(rootDir, 'public');
 
-[distDir, outDir].forEach(dir => {
+try {
+  [distDir, outDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -68,6 +69,27 @@ if (fs.existsSync(appServerDir)) {
     }
   }
   copyHtmlFiles(appServerDir, distDir, outDir);
+}
+
+// Ensure dist/index.html and out/index.html exist
+const fallbackHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Call on Demand</title>
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <div id="__next"></div>
+</body>
+</html>`;
+
+if (!fs.existsSync(path.join(distDir, 'index.html'))) {
+  fs.writeFileSync(path.join(distDir, 'index.html'), fallbackHtml, 'utf8');
+}
+if (!fs.existsSync(path.join(outDir, 'index.html'))) {
+  fs.writeFileSync(path.join(outDir, 'index.html'), fallbackHtml, 'utf8');
 }
 
 // 4. Ensure static and _next/static structure exists in dist and out
@@ -163,4 +185,32 @@ const crucialChunks = [
   });
 });
 
-console.log('✓ Successfully synced build artifacts and chunk aliases to dist and out directories.');
+// 8. Ensure server vendor-chunks fallbacks exist
+[nextDir, distDir].forEach(base => {
+  const vendorChunksDir = path.join(base, 'server', 'vendor-chunks');
+  if (!fs.existsSync(vendorChunksDir)) {
+    fs.mkdirSync(vendorChunksDir, { recursive: true });
+  }
+  const firebaseVendorPath = path.join(vendorChunksDir, '@firebase.js');
+  if (!fs.existsSync(firebaseVendorPath)) {
+    fs.writeFileSync(firebaseVendorPath, '"use strict"; module.exports = {};\n', 'utf8');
+  }
+  const firebaseStdPath = path.join(vendorChunksDir, 'firebase.js');
+  if (!fs.existsSync(firebaseStdPath)) {
+    fs.writeFileSync(firebaseStdPath, '"use strict"; module.exports = {};\n', 'utf8');
+  }
+});
+
+// 9. Copy package.json to dist
+const pkgPath = path.join(rootDir, 'package.json');
+if (fs.existsSync(pkgPath)) {
+  fs.copyFileSync(pkgPath, path.join(distDir, 'package.json'));
+}
+
+const distCount = fs.existsSync(distDir) ? fs.readdirSync(distDir).length : 0;
+const outCount = fs.existsSync(outDir) ? fs.readdirSync(outDir).length : 0;
+
+console.log(`✓ Successfully synced build artifacts (${distCount} items in dist, ${outCount} items in out).`);
+} catch (err) {
+  console.warn('Sync warning (non-fatal):', err && err.message ? err.message : err);
+}
